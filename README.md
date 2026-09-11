@@ -64,6 +64,26 @@ EmuSim/
 
 ---
 
+## Installing Libretro Emulation Cores
+
+EmuSim comes with an automated core download script that fetches the official precompiled cores from the Libretro Buildbot:
+
+```bash
+# Download cores for Desktop (Linux / macOS / Windows)
+./scripts/download_cores.sh desktop
+
+# Download cores for Meta Quest 3 / Quest 3S (Android ARM64)
+./scripts/download_cores.sh quest
+```
+
+This installs:
+- **Nintendo 64**: `mupen64plus_next_libretro.so`
+- **PlayStation 1**: `swanstation_libretro.so` & `pcsx_rearmed_libretro.so`
+- **PlayStation 2**: `play_libretro.so`
+- **SNES / NES / Genesis**: `snes9x`, `nestopia`, `genesis_plus_gx`
+
+---
+
 ## Quick Start: Desktop Runner
 
 You can test and debug the complete simulation directly on your development machine:
