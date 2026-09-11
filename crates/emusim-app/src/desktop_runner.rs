@@ -1,6 +1,7 @@
 use crate::desktop_controller::{DesktopFirstPersonController, DesktopPlayMode};
 use crate::world::RetroRoomScene;
-use emusim_audio::{AudioOutputEngine, VrListener};
+use emusim_audio::{AudioOutputEngine, CrtStaticAudioGenerator, VrListener};
+use emusim_core::graph::TvScreenFeed;
 use emusim_render::wgpu_renderer::WgpuCrtRenderer;
 use emusim_xr::input::{ControllerPose, QuestControllerInput, XrFrameInput};
 use glam::Vec3;
@@ -41,6 +42,7 @@ pub fn run_desktop_app() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut scene = RetroRoomScene::new();
     let mut controller = DesktopFirstPersonController::new();
+    let mut crt_noise_gen = CrtStaticAudioGenerator::new(48000.0);
 
     // Default wiring setup for immediate desktop play convenience
     info!("Wiring default circuit: Power Strip -> TV & N64, Multi-Out AV -> TV AV1");
@@ -146,8 +148,25 @@ pub fn run_desktop_app() -> Result<(), Box<dyn std::error::Error>> {
                                 position: controller.camera_pos,
                                 rotation: controller.camera_rotation(),
                             };
-                            while let Ok(mut samples) = scene.emulator_worker.audio_receiver.try_recv() {
-                                audio.push_spatial_samples(&mut samples, &scene.tv_spatial_audio, &listener);
+
+                            let tv_feed = scene.graph.evaluate_tv_screen("crt_tv_1");
+                            match tv_feed {
+                                TvScreenFeed::StaticNoise => {
+                                    if let Some(tv) = scene.graph.televisions.get("crt_tv_1") {
+                                        if tv.power_on && !tv.muted {
+                                            let vol = (tv.volume as f32 / 100.0) * 0.35;
+                                            let frames = ((dt * 48000.0) as usize).clamp(128, 1024);
+                                            let mut noise_samples = crt_noise_gen.generate_stereo_batch(frames, vol);
+                                            audio.push_spatial_samples(&mut noise_samples, &scene.tv_spatial_audio, &listener);
+                                        }
+                                    }
+                                }
+                                TvScreenFeed::ActiveVideo { .. } => {
+                                    while let Ok(mut samples) = scene.emulator_worker.audio_receiver.try_recv() {
+                                        audio.push_spatial_samples(&mut samples, &scene.tv_spatial_audio, &listener);
+                                    }
+                                }
+                                TvScreenFeed::PoweredOff => {}
                             }
                         }
 
