@@ -1,0 +1,16 @@
+[package]
+name = "emusim-render"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+emusim-core = { path = "../emusim-core" }
+emusim-libretro = { path = "../emusim-libretro" }
+emusim-physics = { path = "../emusim-physics" }
+glam.workspace = true
+bytemuck.workspace = true
+tracing.workspace = true
+wgpu.workspace = true
+winit.workspace = true

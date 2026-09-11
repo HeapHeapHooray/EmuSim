@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.emusim.app"
+    android:versionCode="1"
+    android:versionName="0.1.0"
+    android:installLocation="auto">
+
+    <!-- Meta Quest 3 and Quest 3S Head Tracking & 6DOF -->
+    <uses-feature android:name="android.hardware.vr.headtracking" android:version="1" android:required="true" />
+    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
+    <uses-feature android:name="oculus.software.handtracking" android:required="false" />
+
+    <!-- Storage permissions to read ROMs, ISOs, and Libretro cores from /sdcard/EmuSim/ -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <application
+        android:label="EmuSim"
+        android:hasCode="false"
+        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+
+        <!-- Flag this APK as a native Meta Horizon VR application -->
+        <meta-data android:name="com.oculus.supportedDevices" android:value="quest3|quest3s" />
+        <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
+        <meta-data android:name="com.oculus.handtracking.version" android:value="V2.0" />
+
+        <activity
+            android:name="android.app.NativeActivity"
+            android:label="EmuSim"
+            android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode"
+            android:launchMode="singleTask"
+            android:resizeableActivity="false"
+            android:screenOrientation="landscape"
+            android:exported="true">
+
+            <meta-data android:name="android.app.lib_name" android:value="emusim_app" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

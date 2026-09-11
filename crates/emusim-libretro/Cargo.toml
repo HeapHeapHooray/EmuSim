@@ -1,0 +1,15 @@
+[package]
+name = "emusim-libretro"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+emusim-core = { path = "../emusim-core" }
+libloading.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+bytemuck.workspace = true

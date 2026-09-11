@@ -1,0 +1,31 @@
+[package]
+name = "emusim-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "emusim"
+path = "src/main.rs"
+
+[lib]
+name = "emusim_app"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+emusim-core = { path = "../emusim-core" }
+emusim-libretro = { path = "../emusim-libretro" }
+emusim-physics = { path = "../emusim-physics" }
+emusim-audio = { path = "../emusim-audio" }
+emusim-render = { path = "../emusim-render" }
+emusim-xr = { path = "../emusim-xr" }
+glam.workspace = true
+bytemuck.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+winit.workspace = true
+wgpu.workspace = true
+cpal.workspace = true
+pollster.workspace = true
