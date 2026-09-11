@@ -138,8 +138,21 @@ pub fn run_desktop_app(
                                     }
                                 }
                                 TvScreenFeed::ActiveVideo { .. } => {
+                                    let mut got_samples = false;
                                     while let Ok(mut samples) = scene.emulator_worker.audio_receiver.try_recv() {
                                         audio.push_spatial_samples(&mut samples, &scene.tv_spatial_audio, &listener);
+                                        got_samples = true;
+                                    }
+                                    // If console is on standby screen, emit subtle CRT speaker hum
+                                    if !got_samples && scene.active_loaded_rom.is_none() {
+                                        if let Some(tv) = scene.graph.televisions.get("crt_tv_1") {
+                                            if tv.power_on && !tv.muted {
+                                                let vol = (tv.volume as f32 / 100.0) * 0.05;
+                                                let frames = ((dt * 48000.0) as usize).clamp(128, 512);
+                                                let mut hum_samples = crt_noise_gen.generate_stereo_batch(frames, vol);
+                                                audio.push_spatial_samples(&mut hum_samples, &scene.tv_spatial_audio, &listener);
+                                            }
+                                        }
                                     }
                                 }
                                 TvScreenFeed::PoweredOff => {}

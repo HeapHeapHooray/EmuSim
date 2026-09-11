@@ -24,10 +24,16 @@ impl Platform {
         }
     }
 
-    pub const fn default_core_name(&self) -> &'static str {
+    pub fn default_core_name(&self) -> &'static str {
         match self {
             Self::Nintendo64 => "mupen64plus_next",
-            Self::PlayStation1 => "swanstation",
+            Self::PlayStation1 => {
+                if std::path::Path::new("cores/pcsx_rearmed_libretro.so").exists() {
+                    "pcsx_rearmed"
+                } else {
+                    "swanstation"
+                }
+            }
             Self::PlayStation2 => "play",
             Self::SuperNintendo => "snes9x",
             Self::NintendoEntertainmentSystem => "nestopia",

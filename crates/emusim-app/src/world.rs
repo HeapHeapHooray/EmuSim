@@ -239,9 +239,14 @@ impl RetroRoomScene {
                             self.active_loaded_rom = Some(rom_path);
                         }
                     } else {
-                        // Game media is inserted but file is not on disk -> display static noise
-                        self.crt_uniforms.static_noise_intensity = 0.8;
+                        // Game media is selected but file is missing on disk -> render standby screen
+                        let mut frame = self.emulator_worker.video_buffer.write_frame();
+                        emusim_render::osd::render_standby_screen(&mut frame, platform, self.elapsed_time);
                     }
+                } else {
+                    // Console is ON with no disc or cartridge -> render authentic console standby screen
+                    let mut frame = self.emulator_worker.video_buffer.write_frame();
+                    emusim_render::osd::render_standby_screen(&mut frame, platform, self.elapsed_time);
                 }
 
                 // Forward VR controllers as gamepad input to emulator

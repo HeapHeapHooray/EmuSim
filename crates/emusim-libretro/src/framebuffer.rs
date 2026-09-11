@@ -48,6 +48,11 @@ impl SharedVideoBuffer {
         self.inner.read()
     }
 
+    /// Mutably access current frame for rendering OSD or standby screens.
+    pub fn write_frame(&self) -> parking_lot::RwLockWriteGuard<'_, VideoFrame> {
+        self.inner.write()
+    }
+
     /// Update frame from raw Libretro callback buffer.
     pub fn update_from_raw(
         &self,
