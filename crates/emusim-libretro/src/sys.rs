@@ -120,6 +120,14 @@ pub struct RetroVariable {
     pub value: *const c_char,
 }
 
+pub type RetroLogPrintfFn = unsafe extern "C" fn(level: c_uint, fmt: *const c_char, ...);
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct RetroLogCallback {
+    pub log: RetroLogPrintfFn,
+}
+
 // Function pointer signatures defined by Libretro
 pub type RetroEnvironmentFn = unsafe extern "C" fn(cmd: c_uint, data: *mut c_void) -> bool;
 pub type RetroVideoRefreshFn = unsafe extern "C" fn(

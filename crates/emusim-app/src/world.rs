@@ -46,31 +46,50 @@ impl RetroRoomScene {
 
         // 4. Nintendo 64 Console
         let mut n64 = Nintendo64Console::new("n64_console_1");
-        // Sample N64 Cartridge
-        let sample_n64_cart = CartridgeMedia {
-            id: "sm64_cart".into(),
-            title: "Super Mario 64".into(),
-            platform: Platform::Nintendo64,
-            rom_path: PathBuf::from("games/n64/Super Mario 64 (USA).z64"),
-            label_texture_path: None,
-            plastic_color_rgba: [50, 50, 50, 255],
-        };
-        n64.insert_cartridge(sample_n64_cart);
+        if let Ok(entries) = std::fs::read_dir("games/n64") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if Platform::Nintendo64.matches_extension(ext) {
+                        let title = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                        info!("Discovered N64 game on disk: {}", title);
+                        n64.insert_cartridge(CartridgeMedia {
+                            id: format!("cart_{}", title),
+                            title,
+                            platform: Platform::Nintendo64,
+                            rom_path: path,
+                            label_texture_path: None,
+                            plastic_color_rgba: [50, 50, 50, 255],
+                        });
+                        break;
+                    }
+                }
+            }
+        }
         graph.n64_consoles.insert(n64.id.clone(), n64);
 
         // 5. PlayStation 1 Console
         let mut ps1 = PlayStation1Console::new("ps1_console_1");
-        let sample_ps1_disc = DiscMedia {
-            id: "mgs_disc1".into(),
-            title: "Metal Gear Solid (Disc 1)".into(),
-            platform: Platform::PlayStation1,
-            disc_path: PathBuf::from("games/ps1/Metal Gear Solid (USA) (Disc 1).cue"),
-            label_texture_path: None,
-            is_dvd: false,
-        };
-        ps1.lid_open = true;
-        ps1.insert_disc(sample_ps1_disc);
-        ps1.close_lid();
+        if let Ok(entries) = std::fs::read_dir("games/ps1") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if Platform::PlayStation1.matches_extension(ext) {
+                        let title = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                        info!("Discovered PS1 game on disk: {}", title);
+                        ps1.insert_disc(DiscMedia {
+                            id: format!("disc_{}", title),
+                            title,
+                            platform: Platform::PlayStation1,
+                            disc_path: path,
+                            label_texture_path: None,
+                            is_dvd: false,
+                        });
+                        break;
+                    }
+                }
+            }
+        }
         graph.ps1_consoles.insert(ps1.id.clone(), ps1);
 
         // 6. PlayStation 2 Console
@@ -162,12 +181,17 @@ impl RetroRoomScene {
                 };
 
                 if let Some(rom_path) = target_rom {
-                    if self.active_loaded_rom.as_ref() != Some(&rom_path) {
-                        let core_lib = format!("cores/{}_libretro.so", platform.default_core_name());
-                        info!("Loading platform {:?} with core {}", platform, core_lib);
-                        self.emulator_worker
-                            .load_game(PathBuf::from(core_lib), rom_path.clone());
-                        self.active_loaded_rom = Some(rom_path);
+                    if rom_path.is_file() {
+                        if self.active_loaded_rom.as_ref() != Some(&rom_path) {
+                            let core_lib = format!("cores/{}_libretro.so", platform.default_core_name());
+                            info!("Loading platform {:?} with core {}", platform, core_lib);
+                            self.emulator_worker
+                                .load_game(PathBuf::from(core_lib), rom_path.clone());
+                            self.active_loaded_rom = Some(rom_path);
+                        }
+                    } else {
+                        // Game media is inserted but file is not on disk -> display static noise
+                        self.crt_uniforms.static_noise_intensity = 0.8;
                     }
                 }
 

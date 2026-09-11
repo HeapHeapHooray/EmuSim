@@ -13,12 +13,16 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CoreError {
+    #[error("ROM file not found: {0}")]
+    RomNotFound(std::path::PathBuf),
     #[error("Failed to dynamically load library: {0}")]
     LoadError(#[from] libloading::Error),
     #[error("Missing symbol '{0}' in Libretro core")]
     MissingSymbol(&'static str),
     #[error("Game load failed in core")]
     GameLoadFailed,
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 pub struct LibretroSymbols {
@@ -153,10 +157,26 @@ impl LibretroCoreInstance {
     }
 
     pub fn load_game(&mut self, rom_path: &Path, rom_data: Option<&[u8]>) -> Result<(), CoreError> {
+        if !rom_path.is_file() && rom_data.is_none() {
+            return Err(CoreError::RomNotFound(rom_path.to_path_buf()));
+        }
+
         let path_c = CString::new(rom_path.to_string_lossy().as_bytes()).unwrap();
 
-        let (data_ptr, size) = if let Some(d) = rom_data {
-            (d.as_ptr() as *const c_void, d.len())
+        // Read ROM bytes into a buffer so both `data` and `path` are available to the core
+        let buffer = match rom_data {
+            Some(d) => Some(d.to_vec()),
+            None => {
+                if rom_path.is_file() {
+                    std::fs::read(rom_path).ok()
+                } else {
+                    None
+                }
+            }
+        };
+
+        let (data_ptr, size) = if let Some(ref buf) = buffer {
+            (buf.as_ptr() as *const c_void, buf.len())
         } else {
             (std::ptr::null(), 0)
         };
@@ -214,6 +234,10 @@ impl Drop for LibretroCoreInstance {
     }
 }
 
+static SYSTEM_DIR: &[u8] = b"system\0";
+static SAVES_DIR: &[u8] = b"saves\0";
+static ASSETS_DIR: &[u8] = b"assets\0";
+
 // C Callbacks redirected via thread-local context
 unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -> bool {
     CURRENT_CONTEXT.with(|ctx_cell| {
@@ -239,10 +263,67 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
                 }
                 false
             }
-            RETRO_ENVIRONMENT_GET_VARIABLE => {
-                // Return default options for cores
+            RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY => {
+                if !data.is_null() {
+                    let _ = std::fs::create_dir_all("system");
+                    *(data as *mut *const std::os::raw::c_char) =
+                        SYSTEM_DIR.as_ptr() as *const std::os::raw::c_char;
+                    return true;
+                }
                 false
             }
+            RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY => {
+                if !data.is_null() {
+                    let _ = std::fs::create_dir_all("saves");
+                    *(data as *mut *const std::os::raw::c_char) =
+                        SAVES_DIR.as_ptr() as *const std::os::raw::c_char;
+                    return true;
+                }
+                false
+            }
+            RETRO_ENVIRONMENT_GET_CORE_ASSETS_DIRECTORY => {
+                if !data.is_null() {
+                    *(data as *mut *const std::os::raw::c_char) =
+                        ASSETS_DIR.as_ptr() as *const std::os::raw::c_char;
+                    return true;
+                }
+                false
+            }
+            RETRO_ENVIRONMENT_GET_VARIABLE => {
+                if !data.is_null() {
+                    let var = data as *mut RetroVariable;
+                    // Safely set value to null so the core does not read dangling pointer
+                    (*var).value = std::ptr::null();
+                    return false;
+                }
+                false
+            }
+            RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE => {
+                if !data.is_null() {
+                    *(data as *mut bool) = false;
+                    return true;
+                }
+                false
+            }
+            RETRO_ENVIRONMENT_GET_INPUT_BITMASKS => {
+                if !data.is_null() {
+                    *(data as *mut bool) = true;
+                    return true;
+                }
+                false
+            }
+            RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE => {
+                if !data.is_null() {
+                    *(data as *mut c_uint) = 1 | 2; // video (1) + audio (2) enabled
+                    return true;
+                }
+                false
+            }
+            RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS
+            | RETRO_ENVIRONMENT_SET_CONTROLLER_INFO
+            | RETRO_ENVIRONMENT_SET_CORE_OPTIONS
+            | RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME => true,
+
             _ => false,
         }
     })
