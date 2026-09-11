@@ -16,6 +16,35 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::info;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectedConsole {
+    Nintendo64,
+    PlayStation1,
+    PlayStation2,
+    None,
+}
+
+impl SelectedConsole {
+    pub fn from_str_name(name: &str) -> Self {
+        match name.to_ascii_lowercase().as_str() {
+            "n64" | "nintendo64" => Self::Nintendo64,
+            "ps1" | "psx" | "playstation" | "playstation1" => Self::PlayStation1,
+            "ps2" | "playstation2" => Self::PlayStation2,
+            "none" | "static" | "tv" => Self::None,
+            _ => Self::Nintendo64,
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Nintendo64 => "Nintendo 64",
+            Self::PlayStation1 => "Sony PlayStation 1",
+            Self::PlayStation2 => "Sony PlayStation 2",
+            Self::None => "None (Unwired)",
+        }
+    }
+}
+
 pub struct RetroRoomScene {
     pub graph: CircuitGraph,
     pub cable_physics: HashMap<String, VerletCableStrand>,
@@ -93,7 +122,27 @@ impl RetroRoomScene {
         graph.ps1_consoles.insert(ps1.id.clone(), ps1);
 
         // 6. PlayStation 2 Console
-        let ps2 = PlayStation2Console::new("ps2_console_1");
+        let mut ps2 = PlayStation2Console::new("ps2_console_1");
+        if let Ok(entries) = std::fs::read_dir("games/ps2") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if Platform::PlayStation2.matches_extension(ext) {
+                        let title = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                        info!("Discovered PS2 game on disk: {}", title);
+                        ps2.insert_disc(DiscMedia {
+                            id: format!("disc_ps2_{}", title),
+                            title,
+                            platform: Platform::PlayStation2,
+                            disc_path: path,
+                            label_texture_path: None,
+                            is_dvd: true,
+                        });
+                        break;
+                    }
+                }
+            }
+        }
         graph.ps2_consoles.insert(ps2.id.clone(), ps2);
 
         // 7. Physical Cables
@@ -231,6 +280,106 @@ impl RetroRoomScene {
         while let Ok(mut samples) = self.emulator_worker.audio_receiver.try_recv() {
             self.tv_spatial_audio.process_spatial(&mut samples, &listener);
             // In full audio engine, write samples to device audio output ring buffer
+        }
+    }
+
+    /// Wires power strip to wall, CRT TV to power strip, and routes the selected console to the TV's AV1 input.
+    pub fn wire_console_to_tv(&mut self, console: SelectedConsole) {
+        info!("Setting active console in room to: {}", console.display_name());
+
+        // 1. Ensure Power Strip is plugged into Wall Outlet
+        self.graph
+            .connect("power_strip_1_cord_plug", "wall_outlet_1_top");
+
+        // 2. Ensure CRT TV is plugged into Power Strip and turned ON
+        self.graph
+            .connect("tv_power_1_wall", "power_strip_1_outlet_1");
+        self.graph.connect("tv_power_1_c7", "crt_tv_1_power_in");
+        if let Some(tv) = self.graph.televisions.get_mut("crt_tv_1") {
+            if !tv.power_on {
+                tv.toggle_power();
+            }
+        }
+
+        // 3. Disconnect any existing console AV connections to TV AV1
+        self.graph.disconnect("crt_tv_1_av1_video");
+        self.graph.disconnect("crt_tv_1_av1_audio_l");
+        self.graph.disconnect("crt_tv_1_av1_audio_r");
+
+        // Turn off all consoles first
+        if let Some(n64) = self.graph.n64_consoles.get_mut("n64_console_1") {
+            n64.set_power_switch(false);
+        }
+        if let Some(ps1) = self.graph.ps1_consoles.get_mut("ps1_console_1") {
+            ps1.power_button_latched = false;
+        }
+        if let Some(ps2) = self.graph.ps2_consoles.get_mut("ps2_console_1") {
+            ps2.is_system_running = false;
+        }
+
+        // Reset loaded ROM cache to trigger clean core load for new platform
+        self.active_loaded_rom = None;
+
+        // 4. Wire and power up selected console
+        match console {
+            SelectedConsole::Nintendo64 => {
+                self.graph
+                    .connect("n64_power_1_wall", "power_strip_1_outlet_2");
+                self.graph
+                    .connect("n64_power_1_n64plug", "n64_console_1_power_in");
+                self.graph
+                    .connect("n64_av_cable_1_multiout", "n64_console_1_multi_out");
+                self.graph
+                    .connect("n64_av_cable_1_rca_yellow", "crt_tv_1_av1_video");
+                self.graph
+                    .connect("n64_av_cable_1_rca_white", "crt_tv_1_av1_audio_l");
+                self.graph
+                    .connect("n64_av_cable_1_rca_red", "crt_tv_1_av1_audio_r");
+
+                if let Some(n64) = self.graph.n64_consoles.get_mut("n64_console_1") {
+                    n64.set_power_switch(true);
+                }
+            }
+            SelectedConsole::PlayStation1 => {
+                self.graph
+                    .connect("ps1_power_1_wall", "power_strip_1_outlet_3");
+                self.graph
+                    .connect("ps1_power_1_c7", "ps1_console_1_power_in");
+                self.graph
+                    .connect("ps_av_cable_1_ps_multiout", "ps1_console_1_multi_out");
+                self.graph
+                    .connect("ps_av_cable_1_rca_yellow", "crt_tv_1_av1_video");
+                self.graph
+                    .connect("ps_av_cable_1_rca_white", "crt_tv_1_av1_audio_l");
+                self.graph
+                    .connect("ps_av_cable_1_rca_red", "crt_tv_1_av1_audio_r");
+
+                if let Some(ps1) = self.graph.ps1_consoles.get_mut("ps1_console_1") {
+                    ps1.power_button_latched = true;
+                }
+            }
+            SelectedConsole::PlayStation2 => {
+                self.graph
+                    .connect("ps1_power_1_wall", "power_strip_1_outlet_3");
+                self.graph
+                    .connect("ps1_power_1_c7", "ps2_console_1_power_in");
+                self.graph
+                    .connect("ps_av_cable_1_ps_multiout", "ps2_console_1_multi_out");
+                self.graph
+                    .connect("ps_av_cable_1_rca_yellow", "crt_tv_1_av1_video");
+                self.graph
+                    .connect("ps_av_cable_1_rca_white", "crt_tv_1_av1_audio_l");
+                self.graph
+                    .connect("ps_av_cable_1_rca_red", "crt_tv_1_av1_audio_r");
+
+                if let Some(ps2) = self.graph.ps2_consoles.get_mut("ps2_console_1") {
+                    ps2.rear_rocker_switch_on = true;
+                    ps2.is_system_running = true;
+                }
+            }
+            SelectedConsole::None => {
+                info!("CRT TV is on with static noise (no console connected).");
+            }
         }
     }
 }

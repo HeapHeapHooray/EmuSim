@@ -13,8 +13,10 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
-pub fn run_desktop_app() -> Result<(), Box<dyn std::error::Error>> {
-    info!("Starting EmuSim Desktop Window...");
+pub fn run_desktop_app(
+    initial_console: crate::world::SelectedConsole,
+) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Starting EmuSim Desktop Window with active console: {}", initial_console.display_name());
 
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
@@ -44,39 +46,8 @@ pub fn run_desktop_app() -> Result<(), Box<dyn std::error::Error>> {
     let mut controller = DesktopFirstPersonController::new();
     let mut crt_noise_gen = CrtStaticAudioGenerator::new(48000.0);
 
-    // Default wiring setup for immediate desktop play convenience
-    info!("Wiring default circuit: Power Strip -> TV & N64, Multi-Out AV -> TV AV1");
-    scene
-        .graph
-        .connect("power_strip_1_cord_plug", "wall_outlet_1_top");
-    scene.graph.connect("tv_power_1_wall", "power_strip_1_outlet_1");
-    scene.graph.connect("tv_power_1_c7", "crt_tv_1_power_in");
-    scene
-        .graph
-        .connect("n64_power_1_wall", "power_strip_1_outlet_2");
-    scene
-        .graph
-        .connect("n64_power_1_n64plug", "n64_console_1_power_in");
-    scene
-        .graph
-        .connect("n64_av_cable_1_multiout", "n64_console_1_multi_out");
-    scene
-        .graph
-        .connect("n64_av_cable_1_rca_yellow", "crt_tv_1_av1_video");
-    scene
-        .graph
-        .connect("n64_av_cable_1_rca_white", "crt_tv_1_av1_audio_l");
-    scene
-        .graph
-        .connect("n64_av_cable_1_rca_red", "crt_tv_1_av1_audio_r");
-
-    // Turn ON CRT TV and N64
-    if let Some(tv) = scene.graph.televisions.get_mut("crt_tv_1") {
-        tv.toggle_power();
-    }
-    if let Some(n64) = scene.graph.n64_consoles.get_mut("n64_console_1") {
-        n64.set_power_switch(true);
-    }
+    // Wire up the chosen default console
+    scene.wire_console_to_tv(initial_console);
 
     let mut last_frame_time = Instant::now();
 
@@ -122,6 +93,11 @@ pub fn run_desktop_app() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             controller.is_interact_pressed = false;
+                        }
+
+                        // Handle console hotkey switching (1 = N64, 2 = PS1, 3 = PS2, 0 = None)
+                        if let Some(console) = controller.switch_to_console.take() {
+                            scene.wire_console_to_tv(console);
                         }
 
                         // Feed inputs into scene

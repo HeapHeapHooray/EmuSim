@@ -22,6 +22,7 @@ pub struct DesktopFirstPersonController {
     pub move_right: bool,
     pub is_interact_pressed: bool,
     pub is_drop_pressed: bool,
+    pub switch_to_console: Option<crate::world::SelectedConsole>,
     pub retro_gamepad: UnifiedGamepadState,
 }
 
@@ -38,6 +39,7 @@ impl Default for DesktopFirstPersonController {
             move_right: false,
             is_interact_pressed: false,
             is_drop_pressed: false,
+            switch_to_console: None,
             retro_gamepad: UnifiedGamepadState::default(),
         }
     }
@@ -112,6 +114,21 @@ impl DesktopFirstPersonController {
                     KeyCode::KeyD => self.move_right = is_pressed,
                     KeyCode::KeyE => self.is_interact_pressed = is_pressed,
                     KeyCode::KeyQ => self.is_drop_pressed = is_pressed,
+
+                    // Console quick-swap shortcuts
+                    KeyCode::Digit1 if is_pressed => {
+                        self.switch_to_console = Some(crate::world::SelectedConsole::Nintendo64);
+                    }
+                    KeyCode::Digit2 if is_pressed => {
+                        self.switch_to_console = Some(crate::world::SelectedConsole::PlayStation1);
+                    }
+                    KeyCode::Digit3 if is_pressed => {
+                        self.switch_to_console = Some(crate::world::SelectedConsole::PlayStation2);
+                    }
+                    KeyCode::Digit0 if is_pressed => {
+                        self.switch_to_console = Some(crate::world::SelectedConsole::None);
+                    }
+
                     _ => {}
                 }
             }

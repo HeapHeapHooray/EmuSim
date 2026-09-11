@@ -4,7 +4,7 @@ pub mod world;
 
 pub use desktop_controller::*;
 pub use desktop_runner::*;
-pub use world::RetroRoomScene;
+pub use world::{RetroRoomScene, SelectedConsole};
 
 /// Android entry point for Meta Quest standalone APK.
 #[cfg(target_os = "android")]
