@@ -113,6 +113,7 @@ fn run_emulator_loop(
                 EmulatorCommand::LoadCore { core_path, rom_path } => {
                     info!("Loading core {:?} with ROM {:?}", core_path, rom_path);
                     current_core = None; // drop old core first
+                    paused = false; // Reset paused state so new core begins running immediately
 
                     match LibretroCoreInstance::load(&core_path, video_buffer.clone(), audio_tx.clone()) {
                         Ok(mut core) => {

@@ -161,11 +161,19 @@ impl RetroRoomScene {
 
         let mut cable_physics = HashMap::new();
 
-        // Initialize Verlet physics strands for each cable
-        for cable in [&n64_av_cable, &ps_av_cable, &n64_power, &tv_power, &ps1_power] {
-            let start = Vec3::new(0.0, 0.0, -1.0);
-            let end = Vec3::new(0.2, 0.0, -1.0);
-            let strand = VerletCableStrand::new(start, end, 16, cable.thickness * 0.5);
+        // Initialize Verlet physics strands for each cable pinned to realistic 3D socket positions
+        let cable_endpoints = [
+            (&n64_av_cable, Vec3::new(0.05, 0.24, -1.81), Vec3::new(-0.15, 0.86, -2.02)),
+            (&ps_av_cable, Vec3::new(-0.54, 0.24, -1.815), Vec3::new(-0.15, 0.86, -2.02)),
+            (&n64_power, Vec3::new(-0.06, 0.24, -1.81), Vec3::new(0.36, 0.035, -2.15)),
+            (&tv_power, Vec3::new(0.09, 0.72, -2.02), Vec3::new(0.40, 0.035, -2.15)),
+            (&ps1_power, Vec3::new(-0.40, 0.24, -1.815), Vec3::new(0.44, 0.035, -2.15)),
+        ];
+
+        for (cable, start, end) in cable_endpoints {
+            let mut strand = VerletCableStrand::new(start, end, 16, cable.thickness * 0.5);
+            strand.pin_start(start);
+            strand.pin_end(end);
             cable_physics.insert(cable.id.clone(), strand);
         }
 
@@ -216,6 +224,7 @@ impl RetroRoomScene {
             } => {
                 self.crt_uniforms.static_noise_intensity = 0.0;
                 self.crt_uniforms.power_fade = 1.0;
+                self.emulator_worker.resume();
 
                 // Check if we have media inserted for this console
                 let target_rom = match platform {
@@ -321,6 +330,9 @@ impl RetroRoomScene {
             if !tv.power_on {
                 tv.toggle_power();
             }
+            if console != SelectedConsole::None {
+                tv.input_source = emusim_core::devices::TvInputSource::CompositeAv1;
+            }
         }
 
         // 3. Disconnect any existing console AV connections to TV AV1
@@ -362,6 +374,13 @@ impl RetroRoomScene {
                 if let Some(n64) = self.graph.n64_consoles.get_mut("n64_console_1") {
                     n64.set_power_switch(true);
                 }
+
+                if let Some(strand) = self.cable_physics.get_mut("n64_av_cable_1") {
+                    strand.pin_start(Vec3::new(0.05, 0.24, -1.81));
+                }
+                if let Some(strand) = self.cable_physics.get_mut("n64_power_1") {
+                    strand.pin_start(Vec3::new(-0.06, 0.24, -1.81));
+                }
             }
             SelectedConsole::PlayStation1 => {
                 self.graph
@@ -379,6 +398,13 @@ impl RetroRoomScene {
 
                 if let Some(ps1) = self.graph.ps1_consoles.get_mut("ps1_console_1") {
                     ps1.power_button_latched = true;
+                }
+
+                if let Some(strand) = self.cable_physics.get_mut("ps_av_cable_1") {
+                    strand.pin_start(Vec3::new(-0.54, 0.24, -1.815));
+                }
+                if let Some(strand) = self.cable_physics.get_mut("ps1_power_1") {
+                    strand.pin_start(Vec3::new(-0.40, 0.24, -1.815));
                 }
             }
             SelectedConsole::PlayStation2 => {
@@ -398,6 +424,13 @@ impl RetroRoomScene {
                 if let Some(ps2) = self.graph.ps2_consoles.get_mut("ps2_console_1") {
                     ps2.rear_rocker_switch_on = true;
                     ps2.is_system_running = true;
+                }
+
+                if let Some(strand) = self.cable_physics.get_mut("ps_av_cable_1") {
+                    strand.pin_start(Vec3::new(0.54, 0.24, -1.84));
+                }
+                if let Some(strand) = self.cable_physics.get_mut("ps1_power_1") {
+                    strand.pin_start(Vec3::new(0.35, 0.24, -1.84));
                 }
             }
             SelectedConsole::None => {

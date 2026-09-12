@@ -16,6 +16,7 @@ pub struct DesktopFirstPersonController {
     pub camera_pos: Vec3,
     pub camera_yaw: f32,
     pub camera_pitch: f32,
+    pub eye_height: f32,
     pub move_forward: bool,
     pub move_backward: bool,
     pub move_left: bool,
@@ -28,11 +29,13 @@ pub struct DesktopFirstPersonController {
 
 impl Default for DesktopFirstPersonController {
     fn default() -> Self {
+        let eye_height = 1.05;
         Self {
             mode: DesktopPlayMode::RoomExploration,
-            camera_pos: Vec3::new(0.0, 1.4, 0.0), // Standing height ~1.4m
+            camera_pos: Vec3::new(0.0, eye_height, -0.15),
             camera_yaw: 0.0,
-            camera_pitch: 0.0,
+            camera_pitch: -0.15,
+            eye_height,
             move_forward: false,
             move_backward: false,
             move_left: false,
@@ -83,15 +86,17 @@ impl DesktopFirstPersonController {
         if is_pressed && (key == KeyCode::Tab || key == KeyCode::KeyG) {
             self.mode = match self.mode {
                 DesktopPlayMode::RoomExploration => {
-                    // Sit in front of CRT TV
-                    self.camera_pos = Vec3::new(0.0, 0.85, -1.0);
+                    // Sit directly in front of CRT TV
+                    self.camera_pos = Vec3::new(0.0, 0.77, -0.96);
                     self.camera_pitch = 0.0;
                     self.camera_yaw = 0.0;
                     DesktopPlayMode::GameFocus
                 }
                 DesktopPlayMode::GameFocus => {
                     // Stand back up into room
-                    self.camera_pos = Vec3::new(0.0, 1.4, 0.0);
+                    self.camera_pos = Vec3::new(0.0, self.eye_height, -0.15);
+                    self.camera_pitch = -0.15;
+                    self.camera_yaw = 0.0;
                     DesktopPlayMode::RoomExploration
                 }
             };
@@ -100,7 +105,7 @@ impl DesktopFirstPersonController {
 
         if is_pressed && key == KeyCode::Escape && self.mode == DesktopPlayMode::GameFocus {
             self.mode = DesktopPlayMode::RoomExploration;
-            self.camera_pos = Vec3::new(0.0, 1.4, 0.0);
+            self.camera_pos = Vec3::new(0.0, 1.35, 0.1);
             return;
         }
 
@@ -186,6 +191,24 @@ impl DesktopFirstPersonController {
                 return;
             }
 
+            // Console quick-swap shortcuts (1 = N64, 2 = PS1, 3 = PS2, 0 = None / Noise)
+            KeyCode::Digit1 | KeyCode::Numpad1 if is_pressed => {
+                self.switch_to_console = Some(crate::world::SelectedConsole::Nintendo64);
+                return;
+            }
+            KeyCode::Digit2 | KeyCode::Numpad2 if is_pressed => {
+                self.switch_to_console = Some(crate::world::SelectedConsole::PlayStation1);
+                return;
+            }
+            KeyCode::Digit3 | KeyCode::Numpad3 if is_pressed => {
+                self.switch_to_console = Some(crate::world::SelectedConsole::PlayStation2);
+                return;
+            }
+            KeyCode::Digit0 | KeyCode::Numpad0 if is_pressed => {
+                self.switch_to_console = Some(crate::world::SelectedConsole::None);
+                return;
+            }
+
             _ => {}
         }
 
@@ -200,21 +223,6 @@ impl DesktopFirstPersonController {
                     KeyCode::KeyD => self.move_right = is_pressed,
                     KeyCode::KeyE => self.is_interact_pressed = is_pressed,
                     KeyCode::KeyQ => self.is_drop_pressed = is_pressed,
-
-                    // Console quick-swap shortcuts
-                    KeyCode::Digit1 if is_pressed => {
-                        self.switch_to_console = Some(crate::world::SelectedConsole::Nintendo64);
-                    }
-                    KeyCode::Digit2 if is_pressed => {
-                        self.switch_to_console = Some(crate::world::SelectedConsole::PlayStation1);
-                    }
-                    KeyCode::Digit3 if is_pressed => {
-                        self.switch_to_console = Some(crate::world::SelectedConsole::PlayStation2);
-                    }
-                    KeyCode::Digit0 if is_pressed => {
-                        self.switch_to_console = Some(crate::world::SelectedConsole::None);
-                    }
-
                     _ => {}
                 }
             }
@@ -274,9 +282,10 @@ impl DesktopFirstPersonController {
                 self.camera_pos += movement.normalize() * speed * dt;
             }
 
-            // Room boundaries clamp: 4m x 4m room
-            self.camera_pos.x = self.camera_pos.x.clamp(-2.0, 2.0);
-            self.camera_pos.z = self.camera_pos.z.clamp(-3.0, 1.0);
+            // Room boundaries clamp: 5m x 4m room, front of TV stand
+            self.camera_pos.x = self.camera_pos.x.clamp(-2.2, 2.2);
+            self.camera_pos.z = self.camera_pos.z.clamp(-1.35, 1.3);
+            self.camera_pos.y = self.eye_height;
         }
     }
 

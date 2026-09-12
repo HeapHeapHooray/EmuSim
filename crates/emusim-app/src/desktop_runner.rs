@@ -15,6 +15,7 @@ use winit::window::WindowBuilder;
 
 pub fn run_desktop_app(
     initial_console: crate::world::SelectedConsole,
+    screenshot_target: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting EmuSim Desktop Window with active console: {}", initial_console.display_name());
 
@@ -50,6 +51,25 @@ pub fn run_desktop_app(
     scene.wire_console_to_tv(initial_console);
 
     let mut last_frame_time = Instant::now();
+    let mut is_direct_fullscreen = false;
+    let mut active_console = initial_console;
+
+    let update_title = |win: &winit::window::Window, mode: DesktopPlayMode, direct_fs: bool, console: crate::world::SelectedConsole| {
+        let console_label = console.display_name();
+        if direct_fs {
+            win.set_title(&format!("EmuSim [DIRECT 2D FULLSCREEN | {}] - F11: 3D Room | F12: Screenshot | 1/2/3: Consoles | 0: Static", console_label));
+        } else {
+            match mode {
+                DesktopPlayMode::GameFocus => {
+                    win.set_title(&format!("EmuSim [GAME FOCUS | {}] - Gamepad Active | Tab: Stand Up | F12: Screenshot | 1/2/3: Consoles | 0: Static | F11: 2D Fullscreen", console_label));
+                }
+                DesktopPlayMode::RoomExploration => {
+                    win.set_title(&format!("EmuSim [3D RETRO ROOM | {}] - WASD: Walk | Mouse: Look | F12: Screenshot | Tab: Sit at TV | 1/2/3: Consoles | 0: Static", console_label));
+                }
+            }
+        }
+    };
+    update_title(&window, controller.mode, is_direct_fullscreen, active_console);
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -68,17 +88,43 @@ pub fn run_desktop_app(
                         renderer.resize(size.width, size.height);
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
+                        if event.state == winit::event::ElementState::Pressed {
+                            match event.physical_key {
+                                winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::F11) => {
+                                    is_direct_fullscreen = !is_direct_fullscreen;
+                                    update_title(&window, controller.mode, is_direct_fullscreen, active_console);
+                                }
+                                winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::F12) => {
+                                    let dest = match screenshot_target {
+                                        Some(ref path) => path.clone(),
+                                        None => {
+                                            std::fs::create_dir_all("screenshots").ok();
+                                            let now = std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap_or_default()
+                                                .as_secs();
+                                            format!("screenshots/screenshot_{}.png", now)
+                                        }
+                                    };
+                                    if let Some(parent) = std::path::Path::new(&dest).parent() {
+                                        std::fs::create_dir_all(parent).ok();
+                                    }
+                                    let output = std::process::Command::new("spectacle")
+                                        .args(["-b", "-n", "-e", "-S", "-a", "-o", &dest])
+                                        .output();
+                                    match output {
+                                        Ok(_) => info!("Screenshot successfully captured to {}", dest),
+                                        Err(e) => error!("Failed to execute spectacle for screenshot: {e}"),
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+
                         let prev_mode = controller.mode;
                         controller.handle_keyboard_input(&event);
                         if controller.mode != prev_mode {
-                            match controller.mode {
-                                DesktopPlayMode::GameFocus => {
-                                    window.set_title("EmuSim [GAME FOCUS] - WASD/Arrows: D-Pad | Z/Space: Cross | X: Circle | Tab/Esc: Stand Up");
-                                }
-                                DesktopPlayMode::RoomExploration => {
-                                    window.set_title("EmuSim [ROOM EXPLORATION] - WASD: Walk | Mouse: Look | Arrows: D-Pad | Tab: Sit at TV");
-                                }
-                            }
+                            update_title(&window, controller.mode, is_direct_fullscreen, active_console);
                         }
                     }
                     WindowEvent::MouseInput { button, state, .. } => {
@@ -109,6 +155,8 @@ pub fn run_desktop_app(
                         // Handle console hotkey switching (1 = N64, 2 = PS1, 3 = PS2, 0 = None)
                         if let Some(console) = controller.switch_to_console.take() {
                             scene.wire_console_to_tv(console);
+                            active_console = console;
+                            update_title(&window, controller.mode, is_direct_fullscreen, active_console);
                         }
 
                         // Always forward retro gamepad input to emulator
@@ -129,13 +177,13 @@ pub fn run_desktop_app(
                         scene.update(dt, &xr_input);
 
                         // Stream 3D spatial audio
+                        let tv_feed = scene.graph.evaluate_tv_screen("crt_tv_1");
                         if let Some(ref audio) = audio_engine {
                             let listener = VrListener {
                                 position: controller.camera_pos,
                                 rotation: controller.camera_rotation(),
                             };
 
-                            let tv_feed = scene.graph.evaluate_tv_screen("crt_tv_1");
                             match tv_feed {
                                 TvScreenFeed::StaticNoise => {
                                     // Discard console audio when TV is showing static
@@ -179,9 +227,49 @@ pub fn run_desktop_app(
                             while scene.emulator_worker.audio_receiver.try_recv().is_ok() {}
                         }
 
-                        // Render CRT screen quad
+                        // Build dynamic cable mesh from scene.cable_physics
+                        let mut dynamic_cables = emusim_render::CpuMesh::default();
+                        for (cable_id, strand) in &scene.cable_physics {
+                            let color_rgb = if cable_id.contains("yellow") || cable_id.contains("video") {
+                                [235, 205, 30] // Yellow RCA
+                            } else if cable_id.contains("white") || cable_id.contains("audio_l") {
+                                [230, 230, 235] // White RCA
+                            } else if cable_id.contains("red") || cable_id.contains("audio_r") {
+                                [220, 35, 35] // Red RCA
+                            } else {
+                                [32, 32, 35] // Black power cord
+                            };
+                            let cable_mesh = emusim_render::CpuMesh::from_cable_strand(strand, 6, color_rgb);
+                            dynamic_cables.append(&cable_mesh);
+                        }
+
+                        let crt_glow_color = match tv_feed {
+                            TvScreenFeed::ActiveVideo { .. } => {
+                                let fade = scene.crt_uniforms.power_fade;
+                                [0.40 * fade, 0.50 * fade, 0.75 * fade, 1.0]
+                            }
+                            TvScreenFeed::StaticNoise => {
+                                let fade = scene.crt_uniforms.power_fade;
+                                [0.45 * fade, 0.45 * fade, 0.48 * fade, 1.0]
+                            }
+                            TvScreenFeed::PoweredOff => [0.0, 0.0, 0.0, 0.0],
+                        };
+
+                        // Render 3D Retro Room and CRT TV
                         let frame = scene.emulator_worker.video_buffer.read_frame();
-                        if let Err(e) = renderer.render(&frame, &scene.crt_uniforms) {
+                        let render_ctx = emusim_render::Render3dContext {
+                            video_frame: &frame,
+                            crt_uniforms: &scene.crt_uniforms,
+                            camera_pos: controller.camera_pos,
+                            camera_rot: controller.camera_rotation(),
+                            fov_y_degrees: 60.0,
+                            is_direct_fullscreen,
+                            time_seconds: scene.elapsed_time,
+                            crt_glow_color,
+                            dynamic_cables: Some(&dynamic_cables),
+                        };
+
+                        if let Err(e) = renderer.render_3d(&render_ctx) {
                             match e {
                                 wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
                                     let size = window.inner_size();

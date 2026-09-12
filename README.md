@@ -1,5 +1,7 @@
 # EmuSim (VR Standalone Retro Simulation)
 
+![EmuSim Retro Room & CRT Television](assets/cover.png)
+
 > [!NOTE]
 > **AI-Driven Development**: This project is actively being developed with AI agents (specifically **Gemini 3.8 Flash** at the moment) and is at the start of development. Gemini has been doing an excellent job and the developer is very optimistic about the journey ahead!
 
@@ -111,8 +113,18 @@ This runs the interactive scene sequence:
 3. Plugs TV into Power Strip and turns it on (displays analog static noise).
 4. Plugs N64 Power Adapter into Power Strip and N64.
 5. Connects Nintendo Multi-Out AV cable to CRT TV AV1 inputs.
-6. Switches N64 power slider ON.
 7. Signal graph automatically triggers the Libretro worker and displays active video on the CRT TV!
+
+### Desktop Controls
+
+| Key | Action |
+| :--- | :--- |
+| <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> + Mouse | First-person room exploration & free camera look |
+| <kbd>Tab</kbd> | Toggle **Game Focus** (sit in front of CRT TV) / Room Exploration |
+| <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | Quick-swap console (**1**: Nintendo 64, **2**: PS1, **3**: PS2) |
+| <kbd>0</kbd> | Disconnect console / Tune TV to analog static noise (snow) |
+| <kbd>F11</kbd> | Toggle Direct 2D Fullscreen / 3D Retro Room view |
+| <kbd>F12</kbd> | Capture high-resolution screenshot to `screenshots/` |
 
 ---
 

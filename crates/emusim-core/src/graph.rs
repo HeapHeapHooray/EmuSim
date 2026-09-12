@@ -143,7 +143,7 @@ impl CircuitGraph {
         if let Some(n64) = self.n64_consoles.get(console_id) {
             let power_socket_id = format!("{}_power_in", console_id);
             if n64.power_switch_on && self.is_socket_energized(live_sockets, &power_socket_id) {
-                return n64.inserted_cartridge.is_some();
+                return true;
             }
         }
         false
