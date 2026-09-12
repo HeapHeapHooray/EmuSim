@@ -261,8 +261,9 @@ impl DesktopFirstPersonController {
     pub fn update(&mut self, dt: f32) {
         if self.mode == DesktopPlayMode::RoomExploration {
             let speed = 2.0; // 2 meters per second
-            let forward = Vec3::new(self.camera_yaw.sin(), 0.0, -self.camera_yaw.cos()).normalize_or_zero();
-            let right = Vec3::new(self.camera_yaw.cos(), 0.0, self.camera_yaw.sin()).normalize_or_zero();
+            let yaw_rot = Quat::from_rotation_y(self.camera_yaw);
+            let forward = (yaw_rot * -Vec3::Z).normalize_or_zero();
+            let right = (yaw_rot * Vec3::X).normalize_or_zero();
 
             let mut movement = Vec3::ZERO;
             if self.move_forward {
@@ -297,5 +298,50 @@ impl DesktopFirstPersonController {
     /// Forward gaze ray direction.
     pub fn forward_ray(&self) -> Vec3 {
         self.camera_rotation() * -Vec3::Z
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::PI;
+
+    #[test]
+    fn test_movement_follows_camera_orientation() {
+        let mut ctrl = DesktopFirstPersonController::new();
+        ctrl.camera_pos = Vec3::ZERO;
+        ctrl.eye_height = 0.0;
+
+        // 1. Facing default (yaw = 0): forward is -Z, right is +X
+        ctrl.camera_yaw = 0.0;
+        ctrl.move_forward = true;
+        ctrl.update(0.1);
+        assert!(ctrl.camera_pos.z < 0.0, "Moving forward should decrease Z");
+        assert_eq!(ctrl.camera_pos.x, 0.0);
+
+        // Reset
+        ctrl.camera_pos = Vec3::ZERO;
+        ctrl.move_forward = false;
+        ctrl.move_right = true;
+        ctrl.update(0.1);
+        assert!(ctrl.camera_pos.x > 0.0, "Moving right should increase X");
+        assert_eq!(ctrl.camera_pos.z, 0.0);
+
+        // 2. Turn 90 deg right (yaw = -PI/2): forward should now be +X, right should be +Z
+        ctrl.camera_pos = Vec3::ZERO;
+        ctrl.camera_yaw = -PI * 0.5;
+        ctrl.move_right = false;
+        ctrl.move_forward = true;
+        ctrl.update(0.1);
+        assert!(ctrl.camera_pos.x > 0.0, "Moving forward when turned 90 deg right should increase X");
+        assert!(ctrl.camera_pos.z.abs() < 1e-5);
+
+        // 3. Turn 90 deg left (yaw = PI/2): forward should now be -X
+        ctrl.camera_pos = Vec3::ZERO;
+        ctrl.camera_yaw = PI * 0.5;
+        ctrl.move_forward = true;
+        ctrl.update(0.1);
+        assert!(ctrl.camera_pos.x < 0.0, "Moving forward when turned 90 deg left should decrease X");
+        assert!(ctrl.camera_pos.z.abs() < 1e-5);
     }
 }
