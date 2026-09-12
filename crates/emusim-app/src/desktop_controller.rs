@@ -104,6 +104,92 @@ impl DesktopFirstPersonController {
             return;
         }
 
+        let mut set_btn = |btn_bit: u32, val: bool| {
+            if val {
+                self.retro_gamepad.buttons |= 1 << btn_bit;
+            } else {
+                self.retro_gamepad.buttons &= !(1 << btn_bit);
+            }
+        };
+
+        // 1. Universal console gamepad controls active in BOTH modes:
+        // D-Pad and Left Analog stick
+        match key {
+            KeyCode::ArrowUp => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_UP, is_pressed);
+                self.retro_gamepad.left_analog_y = if is_pressed { -32767 } else { 0 };
+                return;
+            }
+            KeyCode::ArrowDown => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_DOWN, is_pressed);
+                self.retro_gamepad.left_analog_y = if is_pressed { 32767 } else { 0 };
+                return;
+            }
+            KeyCode::ArrowLeft => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_LEFT, is_pressed);
+                self.retro_gamepad.left_analog_x = if is_pressed { -32767 } else { 0 };
+                return;
+            }
+            KeyCode::ArrowRight => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_RIGHT, is_pressed);
+                self.retro_gamepad.left_analog_x = if is_pressed { 32767 } else { 0 };
+                return;
+            }
+
+            // Cross ✕ / Nintendo B / Accept (US) / Cancel (JP)
+            KeyCode::KeyJ | KeyCode::KeyZ | KeyCode::Space => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_B, is_pressed);
+                return;
+            }
+            // Circle ◯ / Nintendo A / Accept (JP) / Cancel (US)
+            KeyCode::KeyK | KeyCode::KeyX => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_A, is_pressed);
+                return;
+            }
+            // Square ◻ / Nintendo Y
+            KeyCode::KeyU | KeyCode::KeyC => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_Y, is_pressed);
+                return;
+            }
+            // Triangle △ / Nintendo X / PS2 Version Info
+            KeyCode::KeyI | KeyCode::KeyV => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_X, is_pressed);
+                return;
+            }
+
+            // Start
+            KeyCode::Enter | KeyCode::NumpadEnter => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_START, is_pressed);
+                return;
+            }
+            // Select
+            KeyCode::ShiftRight | KeyCode::ShiftLeft | KeyCode::Backspace => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_SELECT, is_pressed);
+                return;
+            }
+
+            // Shoulders and triggers
+            KeyCode::KeyH => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_L, is_pressed);
+                return;
+            }
+            KeyCode::KeyL => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_R, is_pressed);
+                return;
+            }
+            KeyCode::KeyO => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_L2, is_pressed);
+                return;
+            }
+            KeyCode::KeyP => {
+                set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_R2, is_pressed);
+                return;
+            }
+
+            _ => {}
+        }
+
+        // 2. Mode-specific keys:
         match self.mode {
             DesktopPlayMode::RoomExploration => {
                 // Room walking WASD
@@ -133,49 +219,30 @@ impl DesktopFirstPersonController {
                 }
             }
             DesktopPlayMode::GameFocus => {
-                // Map keyboard directly to retro gamepad
-                let mut set_btn = |btn_bit: u32, val: bool| {
-                    if val {
-                        self.retro_gamepad.buttons |= 1 << btn_bit;
-                    } else {
-                        self.retro_gamepad.buttons &= !(1 << btn_bit);
-                    }
-                };
-
+                // In Game Focus, WASD also controls the D-Pad / Left Stick
                 match key {
-                    // D-Pad / Analog Stick
-                    KeyCode::ArrowUp | KeyCode::KeyW => {
+                    KeyCode::KeyW => {
                         set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_UP, is_pressed);
-                        self.retro_gamepad.left_analog_y = if is_pressed { 32767 } else { 0 };
-                    }
-                    KeyCode::ArrowDown | KeyCode::KeyS => {
-                        set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_DOWN, is_pressed);
                         self.retro_gamepad.left_analog_y = if is_pressed { -32767 } else { 0 };
                     }
-                    KeyCode::ArrowLeft | KeyCode::KeyA => {
+                    KeyCode::KeyS => {
+                        set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_DOWN, is_pressed);
+                        self.retro_gamepad.left_analog_y = if is_pressed { 32767 } else { 0 };
+                    }
+                    KeyCode::KeyA => {
                         set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_LEFT, is_pressed);
                         self.retro_gamepad.left_analog_x = if is_pressed { -32767 } else { 0 };
                     }
-                    KeyCode::ArrowRight | KeyCode::KeyD => {
+                    KeyCode::KeyD => {
                         set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_RIGHT, is_pressed);
                         self.retro_gamepad.left_analog_x = if is_pressed { 32767 } else { 0 };
                     }
-
-                    // Action buttons (A / B / Cross / Circle)
-                    KeyCode::KeyJ => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_B, is_pressed),
-                    KeyCode::KeyK => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_A, is_pressed),
-                    KeyCode::KeyU => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_Y, is_pressed),
-                    KeyCode::KeyI => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_X, is_pressed),
-
-                    // Triggers / Shoulders
-                    KeyCode::KeyL => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_R, is_pressed),
-                    KeyCode::KeyH => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_L, is_pressed),
-                    KeyCode::Space => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_L2, is_pressed),
-
-                    // Start / Select
-                    KeyCode::Enter => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_START, is_pressed),
-                    KeyCode::ShiftRight => set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_SELECT, is_pressed),
-
+                    KeyCode::KeyQ => {
+                        set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_L, is_pressed);
+                    }
+                    KeyCode::KeyE => {
+                        set_btn(emusim_core::RETRO_DEVICE_ID_JOYPAD_R, is_pressed);
+                    }
                     _ => {}
                 }
             }

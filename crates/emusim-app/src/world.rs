@@ -265,12 +265,14 @@ impl RetroRoomScene {
                     }
                 }
 
-                // Forward VR controllers as gamepad input to emulator
-                let gamepad = VrInteractionManager::map_quest_to_gamepad(
-                    &xr_input.left_controller,
-                    &xr_input.right_controller,
-                );
-                self.emulator_worker.send_input(gamepad);
+                // Forward VR controllers as gamepad input to emulator if VR controllers are tracked
+                if xr_input.left_controller.pose.is_tracked || xr_input.right_controller.pose.is_tracked {
+                    let gamepad = VrInteractionManager::map_quest_to_gamepad(
+                        &xr_input.left_controller,
+                        &xr_input.right_controller,
+                    );
+                    self.emulator_worker.send_input(gamepad);
+                }
             }
             TvScreenFeed::StaticNoise => {
                 self.crt_uniforms.static_noise_intensity = 1.0;

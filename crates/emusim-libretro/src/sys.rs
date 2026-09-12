@@ -69,6 +69,7 @@ pub const RETRO_DEVICE_INDEX_ANALOG_BUTTON: c_uint = 2;
 
 pub const RETRO_DEVICE_ID_ANALOG_X: c_uint = 0;
 pub const RETRO_DEVICE_ID_ANALOG_Y: c_uint = 1;
+pub const RETRO_DEVICE_ID_JOYPAD_MASK: c_uint = 256;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

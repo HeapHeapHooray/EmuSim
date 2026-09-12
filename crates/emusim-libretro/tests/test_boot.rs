@@ -120,6 +120,13 @@ fn test_ps2_standalone() {
                     let mut nonzero_frames = 0;
                     let mut total_audio_samples = 0;
                     for f in 0..180 {
+                        if f == 60 {
+                            use emusim_core::devices::UnifiedGamepadState;
+                            use emusim_core::{RETRO_DEVICE_ID_JOYPAD_DOWN, RETRO_DEVICE_ID_JOYPAD_B};
+                            let mut gp = UnifiedGamepadState::default();
+                            gp.buttons = (1 << RETRO_DEVICE_ID_JOYPAD_DOWN) | (1 << RETRO_DEVICE_ID_JOYPAD_B);
+                            core.update_gamepad(gp);
+                        }
                         core.run_frame();
                         while let Ok(samples) = audio_rx.try_recv() {
                             total_audio_samples += samples.len();
@@ -148,6 +155,37 @@ fn test_ps2_standalone() {
                 println!("PCSX2 failed to load: {:?}", e);
             }
         }
+    }
+}
+
+#[test]
+fn test_gamepad_input_state() {
+    use emusim_core::devices::UnifiedGamepadState;
+    use emusim_core::{RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_UP};
+
+    let core_path = Path::new("cores/swanstation_libretro.so");
+    if !core_path.exists() {
+        return;
+    }
+
+    let video_buffer = SharedVideoBuffer::new();
+    let (audio_tx, _audio_rx) = crossbeam_channel::bounded(64);
+
+    let mut core = LibretroCoreInstance::load(core_path, video_buffer, audio_tx)
+        .expect("Swanstation loads successfully");
+
+    assert!(core.load_no_game().is_ok());
+
+    let mut gp = UnifiedGamepadState::default();
+    gp.buttons = (1 << RETRO_DEVICE_ID_JOYPAD_B) | (1 << RETRO_DEVICE_ID_JOYPAD_UP);
+    gp.left_analog_x = -16384;
+    gp.left_analog_y = -32767;
+
+    core.update_gamepad(gp);
+
+    // Run 30 frames with active controller inputs
+    for _ in 0..30 {
+        core.run_frame();
     }
 }
 

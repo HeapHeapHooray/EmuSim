@@ -68,7 +68,18 @@ pub fn run_desktop_app(
                         renderer.resize(size.width, size.height);
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
+                        let prev_mode = controller.mode;
                         controller.handle_keyboard_input(&event);
+                        if controller.mode != prev_mode {
+                            match controller.mode {
+                                DesktopPlayMode::GameFocus => {
+                                    window.set_title("EmuSim [GAME FOCUS] - WASD/Arrows: D-Pad | Z/Space: Cross | X: Circle | Tab/Esc: Stand Up");
+                                }
+                                DesktopPlayMode::RoomExploration => {
+                                    window.set_title("EmuSim [ROOM EXPLORATION] - WASD: Walk | Mouse: Look | Arrows: D-Pad | Tab: Sit at TV");
+                                }
+                            }
+                        }
                     }
                     WindowEvent::MouseInput { button, state, .. } => {
                         controller.handle_mouse_button(button, state);
@@ -100,6 +111,9 @@ pub fn run_desktop_app(
                             scene.wire_console_to_tv(console);
                         }
 
+                        // Always forward retro gamepad input to emulator
+                        scene.emulator_worker.send_input(controller.retro_gamepad);
+
                         // Feed inputs into scene
                         let xr_input = XrFrameInput {
                             head_pose: ControllerPose {
@@ -111,10 +125,6 @@ pub fn run_desktop_app(
                             right_controller: QuestControllerInput::default(),
                             delta_time: dt,
                         };
-
-                        if controller.mode == DesktopPlayMode::GameFocus {
-                            scene.emulator_worker.send_input(controller.retro_gamepad);
-                        }
 
                         scene.update(dt, &xr_input);
 

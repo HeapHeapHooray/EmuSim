@@ -41,6 +41,7 @@ pub struct LibretroSymbols {
     pub retro_unload_game: unsafe extern "C" fn(),
     pub retro_run: unsafe extern "C" fn(),
     pub retro_reset: unsafe extern "C" fn(),
+    pub retro_set_controller_port_device: Option<unsafe extern "C" fn(port: c_uint, device: c_uint)>,
 }
 
 pub struct ActiveCoreContext {
@@ -108,6 +109,9 @@ impl LibretroCoreInstance {
             let retro_reset: Symbol<unsafe extern "C" fn()> =
                 lib.get(b"retro_reset\0")?;
 
+            let retro_set_controller_port_device: Option<Symbol<unsafe extern "C" fn(c_uint, c_uint)>> =
+                lib.get(b"retro_set_controller_port_device\0").ok();
+
             let symbols = LibretroSymbols {
                 retro_init: *retro_init,
                 retro_deinit: *retro_deinit,
@@ -124,6 +128,7 @@ impl LibretroCoreInstance {
                 retro_unload_game: *retro_unload_game,
                 retro_run: *retro_run,
                 retro_reset: *retro_reset,
+                retro_set_controller_port_device: retro_set_controller_port_device.map(|s| *s),
             };
 
             let core_stem = core_path
@@ -154,6 +159,14 @@ impl LibretroCoreInstance {
             (symbols.retro_set_input_poll)(core_input_poll_callback);
             (symbols.retro_set_input_state)(core_input_state_callback);
             (symbols.retro_init)();
+
+            // Connect standard retro controllers to port 0 and port 1 (PCSX2 initializes ports internally)
+            if !context.core_stem.contains("pcsx2") {
+                if let Some(set_controller) = symbols.retro_set_controller_port_device {
+                    (set_controller)(0, RETRO_DEVICE_JOYPAD);
+                    (set_controller)(1, RETRO_DEVICE_JOYPAD);
+                }
+            }
 
             Ok(Self {
                 _lib: lib,
@@ -204,6 +217,14 @@ impl LibretroCoreInstance {
         }
 
         self.game_loaded = true;
+        if !self.context.core_stem.contains("pcsx2") {
+            if let Some(set_controller) = self.symbols.retro_set_controller_port_device {
+                unsafe {
+                    (set_controller)(0, RETRO_DEVICE_JOYPAD);
+                    (set_controller)(1, RETRO_DEVICE_JOYPAD);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -226,6 +247,14 @@ impl LibretroCoreInstance {
         }
 
         self.game_loaded = true;
+        if !self.context.core_stem.contains("pcsx2") {
+            if let Some(set_controller) = self.symbols.retro_set_controller_port_device {
+                unsafe {
+                    (set_controller)(0, RETRO_DEVICE_JOYPAD);
+                    (set_controller)(1, RETRO_DEVICE_JOYPAD);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -470,6 +499,11 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
                                 (*var).value = VAL_SW.as_ptr() as *const std::os::raw::c_char;
                                 return true;
                             }
+                            "pcsx2_analog_mode1" => {
+                                static VAL_ENABLED: &[u8] = b"enabled\0";
+                                (*var).value = VAL_ENABLED.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
                             _ => {}
                         }
                     }
@@ -596,10 +630,17 @@ unsafe extern "C" fn core_input_state_callback(
         };
 
         let gp = ctx.gamepad.lock();
-        match device {
+        let base_device = device & 0xff;
+        match base_device {
             RETRO_DEVICE_JOYPAD => {
-                if id < 32 && (gp.buttons & (1 << id)) != 0 {
-                    1
+                if id == RETRO_DEVICE_ID_JOYPAD_MASK {
+                    (gp.buttons & 0xffff) as i16
+                } else if id < 32 {
+                    if (gp.buttons & (1 << id)) != 0 {
+                        1
+                    } else {
+                        0
+                    }
                 } else {
                     0
                 }
@@ -610,7 +651,23 @@ unsafe extern "C" fn core_input_state_callback(
                     (RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y) => gp.left_analog_y,
                     (RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X) => gp.right_analog_x,
                     (RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y) => gp.right_analog_y,
-                    _ => 0,
+                    (RETRO_DEVICE_INDEX_ANALOG_BUTTON, button_id) => {
+                        // Analog pressure: return 32767 for pressed buttons (e.g. DualShock 2 pressure sensitivity)
+                        if button_id < 32 && (gp.buttons & (1 << button_id)) != 0 {
+                            32767
+                        } else {
+                            0
+                        }
+                    }
+                    _ => {
+                        if id == RETRO_DEVICE_ID_JOYPAD_MASK {
+                            (gp.buttons & 0xffff) as i16
+                        } else if id < 32 && (gp.buttons & (1 << id)) != 0 {
+                            32767
+                        } else {
+                            0
+                        }
+                    }
                 }
             }
             _ => 0,
