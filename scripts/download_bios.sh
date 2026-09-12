@@ -49,7 +49,7 @@ else
 fi
 
 # 3. Download PS2 BIOS (SCPH-70012 USA & SCPH-50004 Europe)
-PS2_DIR="$SYSTEM_DIR/pcsx2/bios"
+PS2_DIR="$SYSTEM_DIR/ps2/pcsx2/bios"
 mkdir -p "$PS2_DIR"
 echo -n "[>] Downloading PlayStation 2 BIOS (SCPH-70012 Slim USA)... "
 curl -sL -o "$PS2_DIR/SCPH-70012.bin" "https://archive.org/download/scph-70012/PS2_bios/SCPH-70012.bin"

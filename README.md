@@ -93,7 +93,7 @@ To enable authentic console boot intros and original hardware menus for PS1 and 
 ./scripts/download_bios.sh
 ```
 
-This installs authentic BIOS files into `system/ps1/` and `system/pcsx2/bios/`.
+This installs authentic BIOS files into `system/ps1/` and `system/ps2/pcsx2/bios/`.
 
 ---
 

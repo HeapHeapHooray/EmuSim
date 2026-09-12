@@ -44,6 +44,7 @@ pub struct LibretroSymbols {
 }
 
 pub struct ActiveCoreContext {
+    pub core_stem: String,
     pub video_buffer: SharedVideoBuffer,
     pub audio_producer: crossbeam_channel::Sender<Vec<i16>>,
     pub pixel_format: AtomicU32,
@@ -125,7 +126,14 @@ impl LibretroCoreInstance {
                 retro_reset: *retro_reset,
             };
 
+            let core_stem = core_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+
             let context = Arc::new(ActiveCoreContext {
+                core_stem,
                 video_buffer,
                 audio_producer,
                 pixel_format: AtomicU32::new(RETRO_PIXEL_FORMAT_0RGB1555),
@@ -297,13 +305,23 @@ fn find_workspace_dir(dir_name: &str) -> std::path::PathBuf {
     p.canonicalize().unwrap_or(p)
 }
 
-fn get_system_dir_ptr() -> *const std::os::raw::c_char {
-    static CELL: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
-    let cstr = CELL.get_or_init(|| {
-        let path = find_workspace_dir("system");
-        CString::new(path.to_string_lossy().as_bytes()).unwrap()
-    });
-    cstr.as_ptr()
+fn get_system_dir_ptr(core_stem: Option<&str>) -> *const std::os::raw::c_char {
+    let stem = core_stem.unwrap_or("");
+    if stem.contains("pcsx2") || stem.contains("play") {
+        static PS2_CELL: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+        let cstr = PS2_CELL.get_or_init(|| {
+            let path = find_workspace_dir("system/ps2");
+            CString::new(path.to_string_lossy().as_bytes()).unwrap()
+        });
+        cstr.as_ptr()
+    } else {
+        static CELL: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+        let cstr = CELL.get_or_init(|| {
+            let path = find_workspace_dir("system");
+            CString::new(path.to_string_lossy().as_bytes()).unwrap()
+        });
+        cstr.as_ptr()
+    }
 }
 
 fn get_saves_dir_ptr() -> *const std::os::raw::c_char {
@@ -351,7 +369,7 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
             }
             RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY => {
                 if !data.is_null() {
-                    let ptr = get_system_dir_ptr();
+                    let ptr = get_system_dir_ptr(Some(&ctx.core_stem));
                     tracing::debug!(
                         "RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY -> {:?}",
                         std::ffi::CStr::from_ptr(ptr)
