@@ -62,8 +62,31 @@ thread_local! {
     static CURRENT_CONTEXT: RefCell<Option<Arc<ActiveCoreContext>>> = const { RefCell::new(None) };
 }
 
+// Global active context fallback for callbacks triggered from core internal background threads
+static GLOBAL_ACTIVE_CONTEXT: parking_lot::RwLock<Option<Arc<ActiveCoreContext>>> =
+    parking_lot::RwLock::new(None);
+
+pub fn set_active_context(ctx: Option<Arc<ActiveCoreContext>>) {
+    CURRENT_CONTEXT.with(|c| *c.borrow_mut() = ctx.clone());
+    *GLOBAL_ACTIVE_CONTEXT.write() = ctx;
+}
+
+pub fn with_active_context<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&ActiveCoreContext) -> R,
+{
+    let local = CURRENT_CONTEXT.with(|c| c.borrow().clone());
+    if let Some(ref ctx) = local {
+        Some(f(ctx))
+    } else if let Some(ref ctx) = *GLOBAL_ACTIVE_CONTEXT.read() {
+        Some(f(ctx))
+    } else {
+        None
+    }
+}
+
 pub struct LibretroCoreInstance {
-    _lib: Library,
+    _lib: std::mem::ManuallyDrop<Library>,
     symbols: LibretroSymbols,
     context: Arc<ActiveCoreContext>,
     game_loaded: bool,
@@ -151,7 +174,7 @@ impl LibretroCoreInstance {
             });
 
             // Set callbacks
-            CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(context.clone()));
+            set_active_context(Some(context.clone()));
             (symbols.retro_set_environment)(core_environment_callback);
             (symbols.retro_set_video_refresh)(core_video_refresh_callback);
             (symbols.retro_set_audio_sample)(core_audio_sample_callback);
@@ -169,7 +192,7 @@ impl LibretroCoreInstance {
             }
 
             Ok(Self {
-                _lib: lib,
+                _lib: std::mem::ManuallyDrop::new(lib),
                 symbols,
                 context,
                 game_loaded: false,
@@ -210,7 +233,7 @@ impl LibretroCoreInstance {
             meta: std::ptr::null(),
         };
 
-        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(self.context.clone()));
+        set_active_context(Some(self.context.clone()));
         let ok = unsafe { (self.symbols.retro_load_game)(&game_info) };
         if !ok {
             return Err(CoreError::GameLoadFailed);
@@ -229,7 +252,7 @@ impl LibretroCoreInstance {
     }
 
     pub fn load_no_game(&mut self) -> Result<(), CoreError> {
-        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(self.context.clone()));
+        set_active_context(Some(self.context.clone()));
         // Try passing NULL first, as per libretro spec for cores supporting no game
         let ok = unsafe { (self.symbols.retro_load_game)(std::ptr::null()) };
         if !ok {
@@ -264,7 +287,7 @@ impl LibretroCoreInstance {
 
     pub fn run_frame(&self) {
         if self.game_loaded {
-            CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(self.context.clone()));
+            set_active_context(Some(self.context.clone()));
             unsafe {
                 (self.symbols.retro_run)();
             }
@@ -273,7 +296,7 @@ impl LibretroCoreInstance {
 
     pub fn reset(&self) {
         if self.game_loaded {
-            CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(self.context.clone()));
+            set_active_context(Some(self.context.clone()));
             unsafe {
                 (self.symbols.retro_reset)();
             }
@@ -283,14 +306,15 @@ impl LibretroCoreInstance {
 
 impl Drop for LibretroCoreInstance {
     fn drop(&mut self) {
-        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(self.context.clone()));
+        set_active_context(Some(self.context.clone()));
         unsafe {
             if self.game_loaded {
                 (self.symbols.retro_unload_game)();
+                self.game_loaded = false;
             }
             (self.symbols.retro_deinit)();
         }
-        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = None);
+        set_active_context(None);
     }
 }
 
@@ -371,14 +395,9 @@ fn get_assets_dir_ptr() -> *const std::os::raw::c_char {
     cstr.as_ptr()
 }
 
-// C Callbacks redirected via thread-local context
+// C Callbacks redirected via thread-local or global context
 unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -> bool {
-    CURRENT_CONTEXT.with(|ctx_cell| {
-        let borrowed = ctx_cell.borrow();
-        let ctx = match borrowed.as_ref() {
-            Some(c) => c,
-            None => return false,
-        };
+    with_active_context(|ctx| {
         // core_environment_callback cmd
         match cmd {
             RETRO_ENVIRONMENT_SET_PIXEL_FORMAT => {
@@ -553,7 +572,7 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
 
             _ => false,
         }
-    })
+    }).unwrap_or(false)
 }
 
 unsafe extern "C" fn core_video_refresh_callback(
@@ -566,29 +585,23 @@ unsafe extern "C" fn core_video_refresh_callback(
         return;
     }
 
-    CURRENT_CONTEXT.with(|ctx_cell| {
-        let borrowed = ctx_cell.borrow();
-        if let Some(ctx) = borrowed.as_ref() {
-            let fmt = ctx.pixel_format.load(Ordering::Relaxed);
-            let frame_idx = ctx.frame_counter.fetch_add(1, Ordering::Relaxed);
-            ctx.video_buffer.update_from_raw(
-                data as *const u8,
-                width,
-                height,
-                pitch,
-                fmt,
-                frame_idx,
-            );
-        }
+    with_active_context(|ctx| {
+        let fmt = ctx.pixel_format.load(Ordering::Relaxed);
+        let frame_idx = ctx.frame_counter.fetch_add(1, Ordering::Relaxed);
+        ctx.video_buffer.update_from_raw(
+            data as *const u8,
+            width,
+            height,
+            pitch,
+            fmt,
+            frame_idx,
+        );
     });
 }
 
 unsafe extern "C" fn core_audio_sample_callback(left: i16, right: i16) {
-    CURRENT_CONTEXT.with(|ctx_cell| {
-        let borrowed = ctx_cell.borrow();
-        if let Some(ctx) = borrowed.as_ref() {
-            let _ = ctx.audio_producer.try_send(vec![left, right]);
-        }
+    with_active_context(|ctx| {
+        let _ = ctx.audio_producer.try_send(vec![left, right]);
     });
 }
 
@@ -597,12 +610,9 @@ unsafe extern "C" fn core_audio_sample_batch_callback(data: *const i16, frames: 
         return 0;
     }
 
-    CURRENT_CONTEXT.with(|ctx_cell| {
-        let borrowed = ctx_cell.borrow();
-        if let Some(ctx) = borrowed.as_ref() {
-            let slice = std::slice::from_raw_parts(data, frames * 2);
-            let _ = ctx.audio_producer.try_send(slice.to_vec());
-        }
+    with_active_context(|ctx| {
+        let slice = std::slice::from_raw_parts(data, frames * 2);
+        let _ = ctx.audio_producer.try_send(slice.to_vec());
     });
 
     frames
@@ -622,13 +632,7 @@ unsafe extern "C" fn core_input_state_callback(
         return 0;
     }
 
-    CURRENT_CONTEXT.with(|ctx_cell| {
-        let borrowed = ctx_cell.borrow();
-        let ctx = match borrowed.as_ref() {
-            Some(c) => c,
-            None => return 0,
-        };
-
+    with_active_context(|ctx| {
         let gp = ctx.gamepad.lock();
         let base_device = device & 0xff;
         match base_device {
@@ -672,5 +676,5 @@ unsafe extern "C" fn core_input_state_callback(
             }
             _ => 0,
         }
-    })
+    }).unwrap_or(0)
 }

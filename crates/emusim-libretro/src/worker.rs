@@ -107,31 +107,13 @@ fn run_emulator_loop(
     while is_running.load(Ordering::Relaxed) {
         let frame_start = Instant::now();
 
+        let mut latest_load_core = None;
+
         // Process incoming commands
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
                 EmulatorCommand::LoadCore { core_path, rom_path } => {
-                    info!("Loading core {:?} with ROM {:?}", core_path, rom_path);
-                    current_core = None; // drop old core first
-                    paused = false; // Reset paused state so new core begins running immediately
-
-                    match LibretroCoreInstance::load(&core_path, video_buffer.clone(), audio_tx.clone()) {
-                        Ok(mut core) => {
-                            let result = match rom_path {
-                                Some(ref p) => core.load_game(p, None),
-                                None => core.load_no_game(),
-                            };
-                            if let Err(e) = result {
-                                error!("Failed to load game/bios in core: {e}");
-                            } else {
-                                info!("Core initialized and emulation started successfully");
-                                current_core = Some(core);
-                            }
-                        }
-                        Err(e) => {
-                            error!("Failed to load Libretro core library: {e}");
-                        }
-                    }
+                    latest_load_core = Some((core_path, rom_path));
                 }
                 EmulatorCommand::UpdateGamepad(gp) => {
                     if let Some(core) = &current_core {
@@ -151,6 +133,34 @@ fn run_emulator_loop(
                 }
                 EmulatorCommand::Stop => {
                     return;
+                }
+            }
+        }
+
+        if let Some((core_path, rom_path)) = latest_load_core {
+            info!("Loading core {:?} with ROM {:?}", core_path, rom_path);
+            if let Some(old_core) = current_core.take() {
+                drop(old_core);
+                // Allow core's worker threads to cleanly exit and join
+                thread::sleep(Duration::from_millis(50));
+            }
+            paused = false;
+
+            match LibretroCoreInstance::load(&core_path, video_buffer.clone(), audio_tx.clone()) {
+                Ok(mut core) => {
+                    let result = match rom_path {
+                        Some(ref p) => core.load_game(p, None),
+                        None => core.load_no_game(),
+                    };
+                    if let Err(e) = result {
+                        error!("Failed to load game/bios in core: {e}");
+                    } else {
+                        info!("Core initialized and emulation started successfully");
+                        current_core = Some(core);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to load Libretro core library: {e}");
                 }
             }
         }

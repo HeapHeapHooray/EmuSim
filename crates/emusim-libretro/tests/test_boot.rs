@@ -189,4 +189,46 @@ fn test_gamepad_input_state() {
     }
 }
 
+#[test]
+fn test_switching_between_consoles_repeatedly() {
+    let worker = emusim_libretro::worker::EmulatorWorkerHandle::spawn();
+
+    let find_path = |rel: &str| {
+        if Path::new(rel).exists() {
+            Some(Path::new(rel).to_path_buf())
+        } else if Path::new("../../").join(rel).exists() {
+            Some(Path::new("../../").join(rel).to_path_buf())
+        } else {
+            None
+        }
+    };
+
+    let n64_core = find_path("cores/parallel_n64_libretro.so").or_else(|| find_path("cores/mupen64plus_next_libretro.so"));
+    let n64_rom = find_path("games/n64/N64NICCC.z64");
+    let ps1_core = find_path("cores/swanstation_libretro.so");
+    let ps2_core = find_path("cores/pcsx2_libretro.so");
+
+    println!("Found cores: n64={:?}, ps1={:?}, ps2={:?}", n64_core, ps1_core, ps2_core);
+
+    for cycle in 0..5 {
+        println!("--- Cycle {} ---", cycle);
+        if let (Some(ref core), Some(ref rom)) = (&n64_core, &n64_rom) {
+            println!("Switching to N64...");
+            worker.load_game(core.clone(), Some(rom.clone()));
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+        if let Some(ref core) = ps1_core {
+            println!("Switching to PS1...");
+            worker.load_game(core.clone(), None);
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+        if let Some(ref core) = ps2_core {
+            println!("Switching to PS2...");
+            worker.load_game(core.clone(), None);
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+    }
+}
+
+
 
