@@ -1,5 +1,8 @@
 # EmuSim (VR Standalone Retro Simulation)
 
+> [!NOTE]
+> **AI-Driven Development**: This project is actively being developed with AI agents (specifically **Gemini 3.8 Flash** at the moment) and is at the start of development. Gemini has been doing an excellent job and the developer is very optimistic about the journey ahead!
+
 **EmuSim** is a standalone VR experience built in Rust for the **Meta Quest 3 and Quest 3S** (as well as PCVR & Desktop). Inspired by EmuVR, it recreates the tactile nostalgia of sitting in a retro bedroom, manually plugging power cables, connecting RCA composite/component wires, popping in N64 cartridges, opening PlayStation CD lids, turning on vintage CRT televisions, and playing emulated games in real-time VR.
 
 ---
@@ -77,10 +80,20 @@ EmuSim comes with an automated core download script that fetches the official pr
 ```
 
 This installs:
-- **Nintendo 64**: `mupen64plus_next_libretro.so`
+- **Nintendo 64**: `mupen64plus_next_libretro.so` & `parallel_n64_libretro.so`
 - **PlayStation 1**: `swanstation_libretro.so` & `pcsx_rearmed_libretro.so`
-- **PlayStation 2**: `play_libretro.so`
+- **PlayStation 2**: `pcsx2_libretro.so` & `play_libretro.so`
 - **SNES / NES / Genesis**: `snes9x`, `nestopia`, `genesis_plus_gx`
+
+### Downloading Console BIOS Files
+
+To enable authentic console boot intros and original hardware menus for PS1 and PS2:
+
+```bash
+./scripts/download_bios.sh
+```
+
+This installs authentic BIOS files into `system/ps1/` and `system/pcsx2/bios/`.
 
 ---
 
