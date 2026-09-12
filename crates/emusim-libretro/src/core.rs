@@ -257,9 +257,72 @@ impl Drop for LibretroCoreInstance {
     }
 }
 
-static SYSTEM_DIR: &[u8] = b"system\0";
-static SAVES_DIR: &[u8] = b"saves\0";
-static ASSETS_DIR: &[u8] = b"assets\0";
+fn find_workspace_dir(dir_name: &str) -> std::path::PathBuf {
+    let env_var_name = format!("EMUSIM_{}_DIR", dir_name.to_uppercase());
+    if let Ok(env_p) = std::env::var(&env_var_name) {
+        let p = std::path::PathBuf::from(env_p);
+        if p.is_dir() {
+            if let Ok(canon) = p.canonicalize() {
+                return canon;
+            }
+        }
+    }
+
+    // Traverse upwards from current dir to find the workspace root
+    let mut curr = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    for _ in 0..6 {
+        if curr.join("cores").exists() || curr.join("Cargo.lock").exists() {
+            let candidate = curr.join(dir_name);
+            let _ = std::fs::create_dir_all(&candidate);
+            if let Ok(canon) = candidate.canonicalize() {
+                return canon;
+            }
+        }
+        if !curr.pop() {
+            break;
+        }
+    }
+
+    for candidate in [dir_name, &format!("../../{}", dir_name), &format!("../{}", dir_name)] {
+        let p = std::path::Path::new(candidate);
+        if p.is_dir() {
+            if let Ok(canon) = p.canonicalize() {
+                return canon;
+            }
+        }
+    }
+
+    let p = std::path::PathBuf::from(dir_name);
+    let _ = std::fs::create_dir_all(&p);
+    p.canonicalize().unwrap_or(p)
+}
+
+fn get_system_dir_ptr() -> *const std::os::raw::c_char {
+    static CELL: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+    let cstr = CELL.get_or_init(|| {
+        let path = find_workspace_dir("system");
+        CString::new(path.to_string_lossy().as_bytes()).unwrap()
+    });
+    cstr.as_ptr()
+}
+
+fn get_saves_dir_ptr() -> *const std::os::raw::c_char {
+    static CELL: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+    let cstr = CELL.get_or_init(|| {
+        let path = find_workspace_dir("saves");
+        CString::new(path.to_string_lossy().as_bytes()).unwrap()
+    });
+    cstr.as_ptr()
+}
+
+fn get_assets_dir_ptr() -> *const std::os::raw::c_char {
+    static CELL: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+    let cstr = CELL.get_or_init(|| {
+        let path = find_workspace_dir("assets");
+        CString::new(path.to_string_lossy().as_bytes()).unwrap()
+    });
+    cstr.as_ptr()
+}
 
 // C Callbacks redirected via thread-local context
 unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -> bool {
@@ -288,26 +351,26 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
             }
             RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY => {
                 if !data.is_null() {
-                    let _ = std::fs::create_dir_all("system");
-                    *(data as *mut *const std::os::raw::c_char) =
-                        SYSTEM_DIR.as_ptr() as *const std::os::raw::c_char;
+                    let ptr = get_system_dir_ptr();
+                    tracing::debug!(
+                        "RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY -> {:?}",
+                        std::ffi::CStr::from_ptr(ptr)
+                    );
+                    *(data as *mut *const std::os::raw::c_char) = ptr;
                     return true;
                 }
                 false
             }
             RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY => {
                 if !data.is_null() {
-                    let _ = std::fs::create_dir_all("saves");
-                    *(data as *mut *const std::os::raw::c_char) =
-                        SAVES_DIR.as_ptr() as *const std::os::raw::c_char;
+                    *(data as *mut *const std::os::raw::c_char) = get_saves_dir_ptr();
                     return true;
                 }
                 false
             }
             RETRO_ENVIRONMENT_GET_CORE_ASSETS_DIRECTORY => {
                 if !data.is_null() {
-                    *(data as *mut *const std::os::raw::c_char) =
-                        ASSETS_DIR.as_ptr() as *const std::os::raw::c_char;
+                    *(data as *mut *const std::os::raw::c_char) = get_assets_dir_ptr();
                     return true;
                 }
                 false
@@ -317,9 +380,10 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
                     let var = data as *mut RetroVariable;
                     if !(*var).key.is_null() {
                         let key = std::ffi::CStr::from_ptr((*var).key).to_str().unwrap_or("");
+                        tracing::debug!("Core GET_VARIABLE: {}", key);
                         match key {
                             "pcsx_rearmed_show_bios_bootlogo" => {
-                                static VAL_ENABLED: &[u8] = b"enabled\0";
+                                static VAL_ENABLED: &[u8] = b"enabled_no_pcsx\0";
                                 (*var).value = VAL_ENABLED.as_ptr() as *const std::os::raw::c_char;
                                 return true;
                             }
@@ -339,8 +403,28 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
                                 return true;
                             }
                             "swanstation_BIOS_PatchFastBoot" => {
-                                static VAL_DISABLED: &[u8] = b"disabled\0";
-                                (*var).value = VAL_DISABLED.as_ptr() as *const std::os::raw::c_char;
+                                static VAL_FALSE: &[u8] = b"false\0";
+                                (*var).value = VAL_FALSE.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "swanstation_BIOS_PathNTSCU" => {
+                                static VAL: &[u8] = b"ps1/scph5501.bin\0";
+                                (*var).value = VAL.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "swanstation_BIOS_PathPAL" => {
+                                static VAL: &[u8] = b"ps1/scph5502.bin\0";
+                                (*var).value = VAL.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "swanstation_BIOS_PathNTSCJ" => {
+                                static VAL: &[u8] = b"ps1/scph5500.bin\0";
+                                (*var).value = VAL.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "swanstation_Console_Region" => {
+                                static VAL_AUTO: &[u8] = b"Auto\0";
+                                (*var).value = VAL_AUTO.as_ptr() as *const std::os::raw::c_char;
                                 return true;
                             }
                             "swanstation_CDROM_RegionCheck" => {
@@ -351,6 +435,21 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
                             "play_fastboot" => {
                                 static VAL_DISABLED: &[u8] = b"disabled\0";
                                 (*var).value = VAL_DISABLED.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "pcsx2_fastboot" => {
+                                static VAL_DISABLED: &[u8] = b"disabled\0";
+                                (*var).value = VAL_DISABLED.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "pcsx2_bios" => {
+                                static VAL_BIOS: &[u8] = b"SCPH-70012.bin\0";
+                                (*var).value = VAL_BIOS.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "pcsx2_renderer" => {
+                                static VAL_SW: &[u8] = b"Software\0";
+                                (*var).value = VAL_SW.as_ptr() as *const std::os::raw::c_char;
                                 return true;
                             }
                             _ => {}
@@ -365,6 +464,18 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
             RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE => {
                 if !data.is_null() {
                     *(data as *mut bool) = false;
+                    return true;
+                }
+                false
+            }
+            RETRO_ENVIRONMENT_GET_LOG_INTERFACE => {
+                if !data.is_null() {
+                    extern "C" {
+                        fn emusim_init_log_callback(cb: *mut c_void);
+                    }
+                    unsafe {
+                        emusim_init_log_callback(data);
+                    }
                     return true;
                 }
                 false
@@ -469,7 +580,7 @@ unsafe extern "C" fn core_input_state_callback(
         let gp = ctx.gamepad.lock();
         match device {
             RETRO_DEVICE_JOYPAD => {
-                if (gp.buttons & (1 << id)) != 0 {
+                if id < 32 && (gp.buttons & (1 << id)) != 0 {
                     1
                 } else {
                     0

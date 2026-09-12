@@ -27,20 +27,26 @@ impl Platform {
     pub fn default_core_name(&self) -> &'static str {
         match self {
             Self::Nintendo64 => {
-                if std::path::Path::new("cores/parallel_n64_libretro.so").exists() {
+                if ["cores/parallel_n64_libretro.so", "../../cores/parallel_n64_libretro.so", "../cores/parallel_n64_libretro.so"].iter().any(|p| std::path::Path::new(p).exists()) {
                     "parallel_n64"
                 } else {
                     "mupen64plus_next"
                 }
             }
             Self::PlayStation1 => {
-                if std::path::Path::new("cores/swanstation_libretro.so").exists() {
+                if ["cores/swanstation_libretro.so", "../../cores/swanstation_libretro.so", "../cores/swanstation_libretro.so"].iter().any(|p| std::path::Path::new(p).exists()) {
                     "swanstation"
                 } else {
                     "pcsx_rearmed"
                 }
             }
-            Self::PlayStation2 => "play",
+            Self::PlayStation2 => {
+                if ["cores/pcsx2_libretro.so", "../../cores/pcsx2_libretro.so", "../cores/pcsx2_libretro.so"].iter().any(|p| std::path::Path::new(p).exists()) {
+                    "pcsx2"
+                } else {
+                    "play"
+                }
+            }
             Self::SuperNintendo => "snes9x",
             Self::NintendoEntertainmentSystem => "nestopia",
             Self::SegaGenesis => "genesis_plus_gx",

@@ -128,6 +128,9 @@ pub fn run_desktop_app(
                             let tv_feed = scene.graph.evaluate_tv_screen("crt_tv_1");
                             match tv_feed {
                                 TvScreenFeed::StaticNoise => {
+                                    // Discard console audio when TV is showing static
+                                    while scene.emulator_worker.audio_receiver.try_recv().is_ok() {}
+
                                     if let Some(tv) = scene.graph.televisions.get("crt_tv_1") {
                                         if tv.power_on && !tv.muted {
                                             let vol = (tv.volume as f32 / 100.0) * 0.35;
@@ -139,24 +142,31 @@ pub fn run_desktop_app(
                                 }
                                 TvScreenFeed::ActiveVideo { .. } => {
                                     let mut got_samples = false;
+                                    let tv_opt = scene.graph.televisions.get("crt_tv_1");
+                                    let is_audible = tv_opt.map(|tv| tv.power_on && !tv.muted).unwrap_or(true);
+                                    let tv_vol = tv_opt.map(|tv| tv.volume as f32 / 100.0).unwrap_or(1.0);
+                                    scene.tv_spatial_audio.gain = tv_vol;
+
                                     while let Ok(mut samples) = scene.emulator_worker.audio_receiver.try_recv() {
-                                        audio.push_spatial_samples(&mut samples, &scene.tv_spatial_audio, &listener);
+                                        if is_audible {
+                                            audio.push_spatial_samples(&mut samples, &scene.tv_spatial_audio, &listener);
+                                        }
                                         got_samples = true;
                                     }
                                     // If console is on standby screen (core not loaded), emit subtle CRT speaker hum
-                                    if !got_samples && scene.active_platform.is_none() {
-                                        if let Some(tv) = scene.graph.televisions.get("crt_tv_1") {
-                                            if tv.power_on && !tv.muted {
-                                                let vol = (tv.volume as f32 / 100.0) * 0.05;
-                                                let frames = ((dt * 48000.0) as usize).clamp(128, 512);
-                                                let mut hum_samples = crt_noise_gen.generate_stereo_batch(frames, vol);
-                                                audio.push_spatial_samples(&mut hum_samples, &scene.tv_spatial_audio, &listener);
-                                            }
-                                        }
+                                    if !got_samples && scene.active_platform.is_none() && is_audible {
+                                        let vol = tv_vol * 0.05;
+                                        let frames = ((dt * 48000.0) as usize).clamp(128, 512);
+                                        let mut hum_samples = crt_noise_gen.generate_stereo_batch(frames, vol);
+                                        audio.push_spatial_samples(&mut hum_samples, &scene.tv_spatial_audio, &listener);
                                     }
                                 }
-                                TvScreenFeed::PoweredOff => {}
+                                TvScreenFeed::PoweredOff => {
+                                    while scene.emulator_worker.audio_receiver.try_recv().is_ok() {}
+                                }
                             }
+                        } else {
+                            while scene.emulator_worker.audio_receiver.try_recv().is_ok() {}
                         }
 
                         // Render CRT screen quad

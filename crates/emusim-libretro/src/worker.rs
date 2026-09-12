@@ -32,7 +32,7 @@ pub struct EmulatorWorkerHandle {
 impl EmulatorWorkerHandle {
     pub fn spawn() -> Self {
         let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<EmulatorCommand>();
-        let (audio_tx, audio_rx) = crossbeam_channel::bounded::<Vec<i16>>(64);
+        let (audio_tx, audio_rx) = crossbeam_channel::bounded::<Vec<i16>>(512);
         let video_buffer = SharedVideoBuffer::new();
         let is_running = Arc::new(AtomicBool::new(true));
 

@@ -34,7 +34,7 @@ impl AudioOutputEngine {
             sample_rate, channels, sample_format
         );
 
-        let sample_queue = Arc::new(Mutex::new(VecDeque::<f32>::with_capacity(8192)));
+        let sample_queue = Arc::new(Mutex::new(VecDeque::<f32>::with_capacity(32768)));
         let queue_clone = sample_queue.clone();
 
         let err_fn = |err| error!("Audio output stream error: {}", err);
@@ -47,8 +47,18 @@ impl AudioOutputEngine {
                     &config,
                     move |data: &mut [f32], _| {
                         let mut q = queue_clone.lock();
-                        for sample in data.iter_mut() {
-                            *sample = q.pop_front().unwrap_or(0.0);
+                        for frame in data.chunks_mut(channels) {
+                            let l = q.pop_front().unwrap_or(0.0);
+                            let r = q.pop_front().unwrap_or(l);
+                            if channels == 1 {
+                                frame[0] = (l + r) * 0.5;
+                            } else if channels >= 2 {
+                                frame[0] = l;
+                                frame[1] = r;
+                                for ch in &mut frame[2..] {
+                                    *ch = 0.0;
+                                }
+                            }
                         }
                     },
                     err_fn,
@@ -60,9 +70,18 @@ impl AudioOutputEngine {
                     &config,
                     move |data: &mut [i16], _| {
                         let mut q = queue_clone.lock();
-                        for sample in data.iter_mut() {
-                            let s = q.pop_front().unwrap_or(0.0);
-                            *sample = (s * i16::MAX as f32) as i16;
+                        for frame in data.chunks_mut(channels) {
+                            let l = q.pop_front().unwrap_or(0.0);
+                            let r = q.pop_front().unwrap_or(l);
+                            if channels == 1 {
+                                frame[0] = (((l + r) * 0.5) * i16::MAX as f32) as i16;
+                            } else if channels >= 2 {
+                                frame[0] = (l * i16::MAX as f32) as i16;
+                                frame[1] = (r * i16::MAX as f32) as i16;
+                                for ch in &mut frame[2..] {
+                                    *ch = 0;
+                                }
+                            }
                         }
                     },
                     err_fn,
@@ -74,9 +93,18 @@ impl AudioOutputEngine {
                     &config,
                     move |data: &mut [u16], _| {
                         let mut q = queue_clone.lock();
-                        for sample in data.iter_mut() {
-                            let s = q.pop_front().unwrap_or(0.0);
-                            *sample = ((s * 0.5 + 0.5) * u16::MAX as f32) as u16;
+                        for frame in data.chunks_mut(channels) {
+                            let l = q.pop_front().unwrap_or(0.0);
+                            let r = q.pop_front().unwrap_or(l);
+                            if channels == 1 {
+                                frame[0] = (((l + r) * 0.25 + 0.5) * u16::MAX as f32) as u16;
+                            } else if channels >= 2 {
+                                frame[0] = ((l * 0.5 + 0.5) * u16::MAX as f32) as u16;
+                                frame[1] = ((r * 0.5 + 0.5) * u16::MAX as f32) as u16;
+                                for ch in &mut frame[2..] {
+                                    *ch = 32768;
+                                }
+                            }
                         }
                     },
                     err_fn,
@@ -107,8 +135,8 @@ impl AudioOutputEngine {
 
         let mut q = self.sample_queue.lock();
         // Prevent queue from growing unbounded if audio runs ahead of output
-        if q.len() > 8192 {
-            q.drain(0..4096);
+        if q.len() > 32768 {
+            q.drain(0..16384);
         }
 
         for &s in samples.iter() {
@@ -116,3 +144,25 @@ impl AudioOutputEngine {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_engine_init() {
+        let host = cpal::default_host();
+        if let Some(dev) = host.default_output_device() {
+            println!("Default output device: {:?}", dev.name());
+            if let Ok(cfg) = dev.default_output_config() {
+                println!("Default output config: sample_rate={}, channels={}, format={:?}", cfg.sample_rate().0, cfg.channels(), cfg.sample_format());
+            }
+        }
+        match AudioOutputEngine::new() {
+            Ok(_) => println!("Audio engine successfully created"),
+            Err(e) => println!("Audio engine error: {e}"),
+        }
+    }
+}
+
+

@@ -1,4 +1,4 @@
-use emusim_audio::{SpatialSource, VrListener};
+use emusim_audio::SpatialSource;
 use emusim_core::cables::CableEntity;
 use emusim_core::devices::{
     CrtTelevision, Nintendo64Console, PlayStation1Console, PlayStation2Console, PowerStrip,
@@ -55,6 +55,12 @@ pub struct RetroRoomScene {
     pub elapsed_time: f32,
     pub active_loaded_rom: Option<PathBuf>,
     pub active_platform: Option<Platform>,
+}
+
+impl Default for RetroRoomScene {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RetroRoomScene {
@@ -235,13 +241,19 @@ impl RetroRoomScene {
 
                 if self.active_platform != Some(platform) || self.active_loaded_rom != valid_rom {
                     let core_name = platform.default_core_name();
-                    let core_file = format!("cores/{}_libretro.so", core_name);
-                    let core_path = PathBuf::from(&core_file);
+                    let core_path = [
+                        format!("cores/{}_libretro.so", core_name),
+                        format!("../../cores/{}_libretro.so", core_name),
+                        format!("../cores/{}_libretro.so", core_name),
+                    ]
+                    .into_iter()
+                    .map(PathBuf::from)
+                    .find(|p| p.is_file());
 
-                    if core_path.is_file() {
+                    if let Some(core_path) = core_path {
                         info!(
-                            "Booting authentic emulation for platform {:?} with core {} (ROM: {:?})",
-                            platform, core_file, valid_rom
+                            "Booting authentic emulation for platform {:?} with core {:?} (ROM: {:?})",
+                            platform, core_path, valid_rom
                         );
                         self.emulator_worker.load_game(core_path, valid_rom.clone());
                         self.active_platform = Some(platform);
@@ -289,17 +301,6 @@ impl RetroRoomScene {
             }
         }
         self.crt_uniforms.time_seconds = self.elapsed_time;
-
-        // 5. Drain audio samples from emulator worker and spatialise
-        let listener = VrListener {
-            position: xr_input.head_pose.position,
-            rotation: xr_input.head_pose.rotation,
-        };
-
-        while let Ok(mut samples) = self.emulator_worker.audio_receiver.try_recv() {
-            self.tv_spatial_audio.process_spatial(&mut samples, &listener);
-            // In full audio engine, write samples to device audio output ring buffer
-        }
     }
 
     /// Wires power strip to wall, CRT TV to power strip, and routes the selected console to the TV's AV1 input.

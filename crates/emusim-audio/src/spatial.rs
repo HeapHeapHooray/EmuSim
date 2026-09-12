@@ -12,8 +12,8 @@ pub struct SpatialAudioConfig {
 impl Default for SpatialAudioConfig {
     fn default() -> Self {
         Self {
-            min_distance: 0.6,
-            max_distance: 12.0,
+            min_distance: 1.2,
+            max_distance: 15.0,
             rolloff_factor: 1.0,
             head_radius: 0.0875,
         }
@@ -65,10 +65,11 @@ impl SpatialSource {
         // local_dir.x: -1.0 (full left), +1.0 (full right)
         let pan = local_dir.x.clamp(-1.0, 1.0);
 
-        // Constant power pan law
+        // Constant power pan law normalized so center produces 100% volume
+        let norm = std::f32::consts::FRAC_1_SQRT_2;
         let angle = (pan + 1.0) * (std::f32::consts::PI / 4.0);
-        let left_gain = angle.cos() * total_gain;
-        let right_gain = angle.sin() * total_gain;
+        let left_gain = ((angle.cos() / norm) * total_gain).clamp(0.0, 1.0);
+        let right_gain = ((angle.sin() / norm) * total_gain).clamp(0.0, 1.0);
 
         for chunk in samples.chunks_exact_mut(2) {
             let l = chunk[0] as f32;

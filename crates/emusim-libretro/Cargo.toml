@@ -13,3 +13,7 @@ parking_lot.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 bytemuck.workspace = true
+
+[build-dependencies]
+cc = "1.0"
+

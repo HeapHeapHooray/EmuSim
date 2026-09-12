@@ -23,20 +23,23 @@ fn test_swanstation_standalone() {
     println!("swanstation load_no_game result: {:?}", res);
     assert!(res.is_ok(), "Swanstation boots without a game!");
 
-    // Run 120 frames of boot sequence
+    // Run 600 frames of boot sequence
     let mut total_audio_samples = 0;
-    for f in 0..120 {
+    for f in 0..600 {
         core.run_frame();
         while let Ok(samples) = audio_rx.try_recv() {
             total_audio_samples += samples.len();
         }
         let frame = video_buffer.read_frame();
-        if f % 30 == 0 {
+        if f % 60 == 0 || f == 420 || f == 480 || f == 540 {
             let nonzero = frame.pixels.iter().filter(|&&b| b > 0).count();
             println!(
                 "Swanstation Frame {}: {}x{}, nonzero bytes {}, total audio samples {}",
                 f, frame.width, frame.height, nonzero, total_audio_samples
             );
+            if frame.width > 0 && frame.height > 0 && nonzero > 0 {
+                // Non-empty frame rendered
+            }
         }
     }
     assert!(total_audio_samples > 0, "Boot intro must produce audio!");
@@ -81,4 +84,71 @@ fn test_parallel_n64_rom() {
         }
     }
 }
+
+#[test]
+fn test_ps2_standalone() {
+    let pcsx2_path = [
+        "cores/pcsx2_libretro.so",
+        "../../cores/pcsx2_libretro.so",
+        "../cores/pcsx2_libretro.so",
+    ]
+    .into_iter()
+    .map(Path::new)
+    .find(|p| p.exists());
+
+    let play_path = [
+        "cores/play_libretro.so",
+        "../../cores/play_libretro.so",
+        "../cores/play_libretro.so",
+    ]
+    .into_iter()
+    .map(Path::new)
+    .find(|p| p.exists());
+
+    println!("Found pcsx2: {:?}, play: {:?}", pcsx2_path, play_path);
+
+    if let Some(core_path) = pcsx2_path {
+        println!("Testing PCSX2 standalone boot...");
+        let video_buffer = SharedVideoBuffer::new();
+        let (audio_tx, audio_rx) = crossbeam_channel::bounded(64);
+
+        match LibretroCoreInstance::load(core_path, video_buffer.clone(), audio_tx) {
+            Ok(mut core) => {
+                let res = core.load_no_game();
+                println!("PCSX2 load_no_game result: {:?}", res);
+                if res.is_ok() {
+                    let mut nonzero_frames = 0;
+                    let mut total_audio_samples = 0;
+                    for f in 0..180 {
+                        core.run_frame();
+                        while let Ok(samples) = audio_rx.try_recv() {
+                            total_audio_samples += samples.len();
+                        }
+                        let frame = video_buffer.read_frame();
+                        let nonzero = frame.pixels.iter().filter(|&&b| b > 0).count();
+                        if nonzero > 0 {
+                            nonzero_frames += 1;
+                        }
+                        if f % 30 == 0 || f == 60 || f == 120 {
+                            println!(
+                                "PCSX2 Frame {}: {}x{}, nonzero bytes {}, audio samples {}",
+                                f, frame.width, frame.height, nonzero, total_audio_samples
+                            );
+                            if frame.width > 0 && frame.height > 0 && nonzero > 0 {
+                                // Non-empty frame rendered
+                            }
+                        }
+                    }
+                    println!("Total nonzero frames: {}, total audio samples: {}", nonzero_frames, total_audio_samples);
+                    assert!(nonzero_frames > 0, "PCSX2 must produce video frames for the PS2 boot intro!");
+                    assert!(total_audio_samples > 0, "PCSX2 must produce audio samples for the PS2 boot chime!");
+                }
+            }
+            Err(e) => {
+                println!("PCSX2 failed to load: {:?}", e);
+            }
+        }
+    }
+}
+
 

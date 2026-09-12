@@ -13,7 +13,8 @@ CORES=(
     "mupen64plus_next_libretro"    # Nintendo 64
     "swanstation_libretro"         # PlayStation 1
     "pcsx_rearmed_libretro"        # PlayStation 1 (Fast ARM/Desktop alternative)
-    "play_libretro"                # PlayStation 2
+    "pcsx2_libretro"               # PlayStation 2 (PCSX2 full hardware/BIOS emulation)
+    "play_libretro"                # PlayStation 2 (HLE alternative)
     "snes9x_libretro"              # Super Nintendo
     "nestopia_libretro"            # Nintendo Entertainment System
     "genesis_plus_gx_libretro"     # Sega Genesis / Mega Drive

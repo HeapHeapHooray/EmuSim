@@ -54,7 +54,11 @@ impl SharedVideoBuffer {
     }
 
     /// Update frame from raw Libretro callback buffer.
-    pub fn update_from_raw(
+    ///
+    /// # Safety
+    /// `raw_data` must either be null or point to a readable memory buffer containing at
+    /// least `height * pitch` bytes.
+    pub unsafe fn update_from_raw(
         &self,
         raw_data: *const u8,
         width: u32,
