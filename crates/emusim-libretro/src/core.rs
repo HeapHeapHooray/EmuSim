@@ -161,7 +161,8 @@ impl LibretroCoreInstance {
             return Err(CoreError::RomNotFound(rom_path.to_path_buf()));
         }
 
-        let path_c = CString::new(rom_path.to_string_lossy().as_bytes()).unwrap();
+        let abs_path = std::fs::canonicalize(rom_path).unwrap_or_else(|_| rom_path.to_path_buf());
+        let path_c = CString::new(abs_path.to_string_lossy().as_bytes()).unwrap();
 
         // Read ROM bytes into a buffer so both `data` and `path` are available to the core
         let buffer = match rom_data {
@@ -192,6 +193,28 @@ impl LibretroCoreInstance {
         let ok = unsafe { (self.symbols.retro_load_game)(&game_info) };
         if !ok {
             return Err(CoreError::GameLoadFailed);
+        }
+
+        self.game_loaded = true;
+        Ok(())
+    }
+
+    pub fn load_no_game(&mut self) -> Result<(), CoreError> {
+        CURRENT_CONTEXT.with(|c| *c.borrow_mut() = Some(self.context.clone()));
+        // Try passing NULL first, as per libretro spec for cores supporting no game
+        let ok = unsafe { (self.symbols.retro_load_game)(std::ptr::null()) };
+        if !ok {
+            // Some cores expect a pointer to an empty struct
+            let empty_info = RetroGameInfo {
+                path: std::ptr::null(),
+                data: std::ptr::null(),
+                size: 0,
+                meta: std::ptr::null(),
+            };
+            let ok2 = unsafe { (self.symbols.retro_load_game)(&empty_info) };
+            if !ok2 {
+                return Err(CoreError::GameLoadFailed);
+            }
         }
 
         self.game_loaded = true;
@@ -246,7 +269,7 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
             Some(c) => c,
             None => return false,
         };
-
+        // core_environment_callback cmd
         match cmd {
             RETRO_ENVIRONMENT_SET_PIXEL_FORMAT => {
                 if !data.is_null() {
@@ -292,6 +315,47 @@ unsafe extern "C" fn core_environment_callback(cmd: c_uint, data: *mut c_void) -
             RETRO_ENVIRONMENT_GET_VARIABLE => {
                 if !data.is_null() {
                     let var = data as *mut RetroVariable;
+                    if !(*var).key.is_null() {
+                        let key = std::ffi::CStr::from_ptr((*var).key).to_str().unwrap_or("");
+                        match key {
+                            "pcsx_rearmed_show_bios_bootlogo" => {
+                                static VAL_ENABLED: &[u8] = b"enabled\0";
+                                (*var).value = VAL_ENABLED.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "pcsx_rearmed_fastboot" => {
+                                static VAL_DISABLED: &[u8] = b"disabled\0";
+                                (*var).value = VAL_DISABLED.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "pcsx_rearmed_bios" => {
+                                static VAL_AUTO: &[u8] = b"auto\0";
+                                (*var).value = VAL_AUTO.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "pcsx_rearmed_region" => {
+                                static VAL_AUTO: &[u8] = b"auto\0";
+                                (*var).value = VAL_AUTO.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "swanstation_BIOS_PatchFastBoot" => {
+                                static VAL_DISABLED: &[u8] = b"disabled\0";
+                                (*var).value = VAL_DISABLED.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "swanstation_CDROM_RegionCheck" => {
+                                static VAL_DISABLED: &[u8] = b"disabled\0";
+                                (*var).value = VAL_DISABLED.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            "play_fastboot" => {
+                                static VAL_DISABLED: &[u8] = b"disabled\0";
+                                (*var).value = VAL_DISABLED.as_ptr() as *const std::os::raw::c_char;
+                                return true;
+                            }
+                            _ => {}
+                        }
+                    }
                     // Safely set value to null so the core does not read dangling pointer
                     (*var).value = std::ptr::null();
                     return false;

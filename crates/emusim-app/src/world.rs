@@ -54,6 +54,7 @@ pub struct RetroRoomScene {
     pub crt_uniforms: CrtShaderUniforms,
     pub elapsed_time: f32,
     pub active_loaded_rom: Option<PathBuf>,
+    pub active_platform: Option<Platform>,
 }
 
 impl RetroRoomScene {
@@ -183,6 +184,7 @@ impl RetroRoomScene {
             crt_uniforms: CrtShaderUniforms::default(),
             elapsed_time: 0.0,
             active_loaded_rom: None,
+            active_platform: None,
         }
     }
 
@@ -209,7 +211,7 @@ impl RetroRoomScene {
                 self.crt_uniforms.static_noise_intensity = 0.0;
                 self.crt_uniforms.power_fade = 1.0;
 
-                // Check if we need to launch the emulator core for this console
+                // Check if we have media inserted for this console
                 let target_rom = match platform {
                     Platform::Nintendo64 => self
                         .graph
@@ -229,24 +231,26 @@ impl RetroRoomScene {
                     _ => None,
                 };
 
-                if let Some(rom_path) = target_rom {
-                    if rom_path.is_file() {
-                        if self.active_loaded_rom.as_ref() != Some(&rom_path) {
-                            let core_lib = format!("cores/{}_libretro.so", platform.default_core_name());
-                            info!("Loading platform {:?} with core {}", platform, core_lib);
-                            self.emulator_worker
-                                .load_game(PathBuf::from(core_lib), rom_path.clone());
-                            self.active_loaded_rom = Some(rom_path);
-                        }
+                let valid_rom = target_rom.filter(|p| p.is_file());
+
+                if self.active_platform != Some(platform) || self.active_loaded_rom != valid_rom {
+                    let core_name = platform.default_core_name();
+                    let core_file = format!("cores/{}_libretro.so", core_name);
+                    let core_path = PathBuf::from(&core_file);
+
+                    if core_path.is_file() {
+                        info!(
+                            "Booting authentic emulation for platform {:?} with core {} (ROM: {:?})",
+                            platform, core_file, valid_rom
+                        );
+                        self.emulator_worker.load_game(core_path, valid_rom.clone());
+                        self.active_platform = Some(platform);
+                        self.active_loaded_rom = valid_rom;
                     } else {
-                        // Game media is selected but file is missing on disk -> render standby screen
+                        // Core library not downloaded yet -> show standby screen instructing how to download cores
                         let mut frame = self.emulator_worker.video_buffer.write_frame();
                         emusim_render::osd::render_standby_screen(&mut frame, platform, self.elapsed_time);
                     }
-                } else {
-                    // Console is ON with no disc or cartridge -> render authentic console standby screen
-                    let mut frame = self.emulator_worker.video_buffer.write_frame();
-                    emusim_render::osd::render_standby_screen(&mut frame, platform, self.elapsed_time);
                 }
 
                 // Forward VR controllers as gamepad input to emulator
@@ -259,9 +263,19 @@ impl RetroRoomScene {
             TvScreenFeed::StaticNoise => {
                 self.crt_uniforms.static_noise_intensity = 1.0;
                 self.crt_uniforms.power_fade = 1.0;
+                if self.active_platform.is_some() {
+                    self.active_platform = None;
+                    self.active_loaded_rom = None;
+                    self.emulator_worker.pause();
+                }
             }
             TvScreenFeed::PoweredOff => {
                 self.crt_uniforms.power_fade = 0.0;
+                if self.active_platform.is_some() {
+                    self.active_platform = None;
+                    self.active_loaded_rom = None;
+                    self.emulator_worker.pause();
+                }
             }
         }
 
@@ -324,6 +338,7 @@ impl RetroRoomScene {
 
         // Reset loaded ROM cache to trigger clean core load for new platform
         self.active_loaded_rom = None;
+        self.active_platform = None;
 
         // 4. Wire and power up selected console
         match console {

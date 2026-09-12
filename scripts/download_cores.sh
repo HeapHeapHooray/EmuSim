@@ -9,6 +9,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_PLATFORM="${1:-desktop}"
 
 CORES=(
+    "parallel_n64_libretro"        # Nintendo 64 (Software rasterized, high compatibility)
     "mupen64plus_next_libretro"    # Nintendo 64
     "swanstation_libretro"         # PlayStation 1
     "pcsx_rearmed_libretro"        # PlayStation 1 (Fast ARM/Desktop alternative)

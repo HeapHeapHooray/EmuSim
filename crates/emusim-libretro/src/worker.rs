@@ -12,7 +12,7 @@ use tracing::{error, info};
 pub enum EmulatorCommand {
     LoadCore {
         core_path: PathBuf,
-        rom_path: PathBuf,
+        rom_path: Option<PathBuf>,
     },
     UpdateGamepad(UnifiedGamepadState),
     Reset,
@@ -55,7 +55,7 @@ impl EmulatorWorkerHandle {
         }
     }
 
-    pub fn load_game(&self, core_path: PathBuf, rom_path: PathBuf) {
+    pub fn load_game(&self, core_path: PathBuf, rom_path: Option<PathBuf>) {
         let _ = self
             .command_sender
             .send(EmulatorCommand::LoadCore { core_path, rom_path });
@@ -116,10 +116,14 @@ fn run_emulator_loop(
 
                     match LibretroCoreInstance::load(&core_path, video_buffer.clone(), audio_tx.clone()) {
                         Ok(mut core) => {
-                            if let Err(e) = core.load_game(&rom_path, None) {
-                                error!("Failed to load game: {e}");
+                            let result = match rom_path {
+                                Some(ref p) => core.load_game(p, None),
+                                None => core.load_no_game(),
+                            };
+                            if let Err(e) = result {
+                                error!("Failed to load game/bios in core: {e}");
                             } else {
-                                info!("Game loaded successfully into core");
+                                info!("Core initialized and emulation started successfully");
                                 current_core = Some(core);
                             }
                         }

@@ -143,8 +143,8 @@ pub fn run_desktop_app(
                                         audio.push_spatial_samples(&mut samples, &scene.tv_spatial_audio, &listener);
                                         got_samples = true;
                                     }
-                                    // If console is on standby screen, emit subtle CRT speaker hum
-                                    if !got_samples && scene.active_loaded_rom.is_none() {
+                                    // If console is on standby screen (core not loaded), emit subtle CRT speaker hum
+                                    if !got_samples && scene.active_platform.is_none() {
                                         if let Some(tv) = scene.graph.televisions.get("crt_tv_1") {
                                             if tv.power_on && !tv.muted {
                                                 let vol = (tv.volume as f32 / 100.0) * 0.05;

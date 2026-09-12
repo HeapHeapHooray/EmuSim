@@ -26,12 +26,18 @@ impl Platform {
 
     pub fn default_core_name(&self) -> &'static str {
         match self {
-            Self::Nintendo64 => "mupen64plus_next",
-            Self::PlayStation1 => {
-                if std::path::Path::new("cores/pcsx_rearmed_libretro.so").exists() {
-                    "pcsx_rearmed"
+            Self::Nintendo64 => {
+                if std::path::Path::new("cores/parallel_n64_libretro.so").exists() {
+                    "parallel_n64"
                 } else {
+                    "mupen64plus_next"
+                }
+            }
+            Self::PlayStation1 => {
+                if std::path::Path::new("cores/swanstation_libretro.so").exists() {
                     "swanstation"
+                } else {
+                    "pcsx_rearmed"
                 }
             }
             Self::PlayStation2 => "play",
